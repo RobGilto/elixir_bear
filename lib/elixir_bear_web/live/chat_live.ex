@@ -282,16 +282,19 @@ defmodule ElixirBearWeb.ChatLive do
           socket.assigns.messages
           |> Enum.reject(fn msg -> msg.role == "assistant" && msg.content == "" end)
 
+        # Prepare messages with multimodal content support for Vision API
+        llm_messages =
+          filtered_messages
+          |> Enum.map(fn msg ->
+            content = prepare_message_content(msg, llm_provider)
+            %{role: msg.role, content: content}
+          end)
+
         llm_messages =
           if system_prompt && system_prompt != "" do
-            [%{role: "system", content: system_prompt}] ++
-              Enum.map(filtered_messages, fn msg ->
-                %{role: msg.role, content: msg.content}
-              end)
+            [%{role: "system", content: system_prompt}] ++ llm_messages
           else
-            Enum.map(filtered_messages, fn msg ->
-              %{role: msg.role, content: msg.content}
-            end)
+            llm_messages
           end
 
         # Start async task to call LLM with streaming
@@ -329,6 +332,54 @@ defmodule ElixirBearWeb.ChatLive do
         end)
 
         {:noreply, socket}
+    end
+  end
+
+  defp prepare_message_content(message, llm_provider) do
+    # Check if message has image attachments
+    has_images =
+      Map.has_key?(message, :attachments) &&
+        Enum.any?(message.attachments, fn att -> att.file_type == "image" end)
+
+    # For OpenAI with images, use multimodal content format
+    if llm_provider == "openai" && has_images do
+      image_attachments =
+        message.attachments
+        |> Enum.filter(fn att -> att.file_type == "image" end)
+
+      # Build content array with text and images
+      text_content = [%{type: "text", text: message.content}]
+
+      image_content =
+        Enum.map(image_attachments, fn att ->
+          # Read image file and encode as base64
+          file_path = Path.join(["priv", "static"] ++ String.split(att.file_path, "/", trim: true))
+          image_data = File.read!(file_path)
+          base64_image = Base.encode64(image_data)
+
+          # Determine image format from mime type
+          image_format =
+            case att.mime_type do
+              "image/jpeg" -> "jpeg"
+              "image/jpg" -> "jpeg"
+              "image/png" -> "png"
+              "image/gif" -> "gif"
+              "image/webp" -> "webp"
+              _ -> "jpeg"
+            end
+
+          %{
+            type: "image_url",
+            image_url: %{
+              url: "data:image/#{image_format};base64,#{base64_image}"
+            }
+          }
+        end)
+
+      text_content ++ image_content
+    else
+      # For other providers or no images, just return text content
+      message.content
     end
   end
 
