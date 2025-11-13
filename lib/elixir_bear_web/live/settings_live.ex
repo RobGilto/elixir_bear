@@ -104,15 +104,27 @@ defmodule ElixirBearWeb.SettingsLive do
   end
 
   @impl true
-  def handle_event("update_ollama_model", %{"value" => ollama_model}, socket) do
-    Chat.update_setting("ollama_model", ollama_model)
+  def handle_event("update_ollama_model", params, socket) do
+    IO.inspect(params, label: "update_ollama_model params")
+    ollama_model = params["value"] || params["ollama_model"] || socket.assigns.ollama_model
+    IO.inspect(ollama_model, label: "ollama_model to save")
 
-    socket =
-      socket
-      |> assign(:ollama_model, ollama_model)
-      |> put_flash(:info, "Model updated")
+    case Chat.update_setting("ollama_model", ollama_model) do
+      {:ok, _setting} ->
+        socket =
+          socket
+          |> assign(:ollama_model, ollama_model)
+          |> put_flash(:info, "Model updated to #{ollama_model}")
 
-    {:noreply, socket}
+        {:noreply, socket}
+
+      {:error, changeset} ->
+        socket =
+          socket
+          |> put_flash(:error, "Failed to update model: #{inspect(changeset.errors)}")
+
+        {:noreply, socket}
+    end
   end
 
   @impl true
@@ -442,29 +454,32 @@ defmodule ElixirBearWeb.SettingsLive do
                 </button>
               </div>
               <%= if length(@ollama_models) > 0 do %>
-                <select
-                  id="ollama_model"
-                  name="value"
-                  phx-change="update_ollama_model"
-                  class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                >
-                  <%= for model <- @ollama_models do %>
-                    <option value={model} selected={model == @ollama_model}><%= model %></option>
-                  <% end %>
-                </select>
+                <form phx-change="update_ollama_model">
+                  <select
+                    id="ollama_model"
+                    name="ollama_model"
+                    class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  >
+                    <%= for model <- @ollama_models do %>
+                      <option value={model} selected={model == @ollama_model}><%= model %></option>
+                    <% end %>
+                  </select>
+                </form>
                 <p class="mt-1 text-sm text-base-content/70">
                   Select the Ollama model to use for chat completions
                 </p>
               <% else %>
-                <input
-                  type="text"
-                  id="ollama_model"
-                  name="value"
-                  value={@ollama_model}
-                  phx-blur="update_ollama_model"
-                  class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                  placeholder="codellama:latest"
-                />
+                <form phx-submit="update_ollama_model">
+                  <input
+                    type="text"
+                    id="ollama_model"
+                    name="ollama_model"
+                    value={@ollama_model}
+                    phx-blur="update_ollama_model"
+                    class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                    placeholder="codellama:latest"
+                  />
+                </form>
                 <p class="mt-1 text-sm text-base-content/70">
                   No models found. Run <code class="bg-base-300 px-1 rounded">ollama pull MODEL_NAME</code>
                   to download models, then click Refresh.
