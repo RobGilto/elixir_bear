@@ -116,6 +116,57 @@ defmodule ElixirBear.OpenAI do
   defp extract_error_message(%{"error" => %{"message" => message}}), do: message
   defp extract_error_message(body), do: inspect(body)
 
+  @doc """
+  Lists available OpenAI models.
+
+  ## Parameters
+    - api_key: OpenAI API key
+
+  ## Returns
+    - {:ok, models} where models is a list of model IDs
+    - {:error, reason} on failure
+  """
+  def list_models(api_key) do
+    headers = [
+      {"Authorization", "Bearer #{api_key}"},
+      {"Content-Type", "application/json"}
+    ]
+
+    case Req.get("https://api.openai.com/v1/models", headers: headers) do
+      {:ok, %{status: 200, body: %{"data" => models}}} ->
+        # Filter for chat models and sort by popularity
+        chat_models =
+          models
+          |> Enum.filter(fn model ->
+            id = model["id"]
+            String.contains?(id, "gpt") && !String.contains?(id, "instruct")
+          end)
+          |> Enum.map(fn model -> model["id"] end)
+          |> Enum.sort()
+
+        {:ok, chat_models}
+
+      {:ok, %{status: status, body: body}} ->
+        {:error, "API returned status #{status}: #{extract_error_message(body)}"}
+
+      {:error, reason} ->
+        {:error, "Request failed: #{inspect(reason)}"}
+    end
+  end
+
+  @doc """
+  Returns a list of commonly used OpenAI models (fallback when API is unavailable).
+  """
+  def default_models do
+    [
+      "gpt-4o",
+      "gpt-4o-mini",
+      "gpt-4-turbo",
+      "gpt-4",
+      "gpt-3.5-turbo"
+    ]
+  end
+
   defp process_stream_chunk(data, callback) do
     data
     |> String.split("\n")

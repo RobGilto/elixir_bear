@@ -1,7 +1,7 @@
 defmodule ElixirBearWeb.ChatLive do
   use ElixirBearWeb, :live_view
 
-  alias ElixirBear.{Chat, OpenAI}
+  alias ElixirBear.{Chat, Ollama, OpenAI}
 
   @impl true
   def mount(_params, _session, socket) do
@@ -121,31 +121,52 @@ defmodule ElixirBearWeb.ChatLive do
         _ -> ""
       end
 
-    # Save the complete assistant message
+    # Save the complete assistant message only if we have content
     conversation = socket.assigns.current_conversation
 
-    {:ok, _message} =
-      Chat.create_message(%{
-        conversation_id: conversation.id,
-        role: "assistant",
-        content: final_content
-      })
+    result =
+      if final_content != "" do
+        Chat.create_message(%{
+          conversation_id: conversation.id,
+          role: "assistant",
+          content: final_content
+        })
+      else
+        {:error, "No content received"}
+      end
 
-    # Update conversation title if it's the first message
-    if length(socket.assigns.messages) == 2 do
-      title = Chat.generate_conversation_title(conversation.id)
-      {:ok, updated_conversation} = Chat.update_conversation(conversation, %{title: title})
-      conversations = Chat.list_conversations()
+    case result do
+      {:ok, _message} ->
+        # Update conversation title if it's the first message
+        if length(socket.assigns.messages) == 2 do
+          title = Chat.generate_conversation_title(conversation.id)
+          {:ok, updated_conversation} = Chat.update_conversation(conversation, %{title: title})
+          conversations = Chat.list_conversations()
 
-      socket =
-        socket
-        |> assign(:current_conversation, updated_conversation)
-        |> assign(:conversations, conversations)
-        |> assign(:loading, false)
+          socket =
+            socket
+            |> assign(:current_conversation, updated_conversation)
+            |> assign(:conversations, conversations)
+            |> assign(:loading, false)
 
-      {:noreply, socket}
-    else
-      {:noreply, assign(socket, :loading, false)}
+          {:noreply, socket}
+        else
+          {:noreply, assign(socket, :loading, false)}
+        end
+
+      {:error, _reason} ->
+        # Remove the temporary assistant message if save failed
+        messages =
+          socket.assigns.messages
+          |> Enum.reject(fn msg -> msg.role == "assistant" && !Map.has_key?(msg, :id) end)
+
+        socket =
+          socket
+          |> assign(:messages, messages)
+          |> assign(:loading, false)
+          |> assign(:error, "Failed to save response. Please try again.")
+
+        {:noreply, socket}
     end
   end
 
@@ -167,14 +188,17 @@ defmodule ElixirBearWeb.ChatLive do
 
   defp send_message(socket, user_message) do
     conversation = socket.assigns.current_conversation
-    api_key = Chat.get_setting_value("openai_api_key")
+    llm_provider = Chat.get_setting_value("llm_provider") || "openai"
 
     cond do
       is_nil(conversation) ->
         {:noreply, put_flash(socket, :error, "Please create a conversation first")}
 
-      is_nil(api_key) || api_key == "" ->
+      llm_provider == "openai" && !valid_openai_config?() ->
         {:noreply, put_flash(socket, :error, "Please set your OpenAI API key in settings")}
+
+      llm_provider == "ollama" && !valid_ollama_config?() ->
+        {:noreply, put_flash(socket, :error, "Ollama is not running or configured correctly")}
 
       true ->
         # Save user message
@@ -198,22 +222,27 @@ defmodule ElixirBearWeb.ChatLive do
           |> assign(:loading, true)
           |> assign(:error, nil)
 
-        # Prepare messages for OpenAI
+        # Prepare messages for LLM (exclude the temporary empty assistant message)
         system_prompt = Chat.get_system_prompt(conversation)
 
-        openai_messages =
+        # Filter out empty messages (like the temporary assistant message we just added)
+        filtered_messages =
+          socket.assigns.messages
+          |> Enum.reject(fn msg -> msg.role == "assistant" && msg.content == "" end)
+
+        llm_messages =
           if system_prompt && system_prompt != "" do
             [%{role: "system", content: system_prompt}] ++
-              Enum.map(socket.assigns.messages, fn msg ->
+              Enum.map(filtered_messages, fn msg ->
                 %{role: msg.role, content: msg.content}
               end)
           else
-            Enum.map(socket.assigns.messages, fn msg ->
+            Enum.map(filtered_messages, fn msg ->
               %{role: msg.role, content: msg.content}
             end)
           end
 
-        # Start async task to call OpenAI with streaming
+        # Start async task to call LLM with streaming
         parent = self()
 
         Task.start(fn ->
@@ -221,7 +250,23 @@ defmodule ElixirBearWeb.ChatLive do
             send(parent, {:stream_content, chunk})
           end
 
-          case OpenAI.stream_chat_completion(api_key, openai_messages, callback) do
+          result =
+            case llm_provider do
+              "openai" ->
+                api_key = Chat.get_setting_value("openai_api_key")
+                model = Chat.get_setting_value("openai_model") || "gpt-3.5-turbo"
+                OpenAI.stream_chat_completion(api_key, llm_messages, callback, model: model)
+
+              "ollama" ->
+                model = Chat.get_setting_value("ollama_model") || "codellama:latest"
+                url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
+                Ollama.stream_chat_completion(llm_messages, callback, model: model, url: url)
+
+              _ ->
+                {:error, "Unknown LLM provider: #{llm_provider}"}
+            end
+
+          case result do
             :ok ->
               # Stream completed successfully, signal completion
               send(parent, {:stream_complete})
@@ -232,6 +277,20 @@ defmodule ElixirBearWeb.ChatLive do
         end)
 
         {:noreply, socket}
+    end
+  end
+
+  defp valid_openai_config? do
+    api_key = Chat.get_setting_value("openai_api_key")
+    !is_nil(api_key) && api_key != ""
+  end
+
+  defp valid_ollama_config? do
+    url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
+
+    case Ollama.check_connection(url: url) do
+      {:ok, _version} -> true
+      {:error, _} -> false
     end
   end
 
