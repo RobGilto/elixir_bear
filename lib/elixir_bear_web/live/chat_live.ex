@@ -18,8 +18,11 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:error, nil)
       |> assign(:selected_background, selected_background)
       |> allow_upload(:message_files,
-        accept: ~w(.jpg .jpeg .png .gif .webp .mp3 .mp4 .mpeg .mpga .m4a .wav),
-        max_entries: 5,
+        accept: ~w(.jpg .jpeg .png .gif .webp .mp3 .mp4 .mpeg .mpga .m4a .wav
+                   .txt .md .ex .exs .heex .eex .leex
+                   .js .jsx .ts .tsx .css .scss .html .json .xml .yaml .yml .toml
+                   .py .rb .java .go .rs .c .cpp .h .hpp .sh .bash),
+        max_entries: 10,
         max_file_size: 20_000_000  # 20MB
       )
 
@@ -453,14 +456,19 @@ defmodule ElixirBearWeb.ChatLive do
                 <%= for entry <- @uploads.message_files.entries do %>
                   <div class="relative group">
                     <div class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg border border-base-300">
-                      <%= if String.starts_with?(entry.client_type, "image/") do %>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                        </svg>
-                      <% else %>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
-                        </svg>
+                      <%= cond do %>
+                        <% String.starts_with?(entry.client_type, "image/") -> %>
+                          <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          </svg>
+                        <% String.starts_with?(entry.client_type, "audio/") -> %>
+                          <svg class="w-4 h-4 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                          </svg>
+                        <% true -> %>
+                          <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
                       <% end %>
                       <span class="text-sm truncate max-w-[150px]"><%= entry.client_name %></span>
                       <button
