@@ -7,6 +7,7 @@ defmodule ElixirBear.Chat do
   alias ElixirBear.Repo
 
   alias ElixirBear.Chat.{Setting, Conversation, Message}
+  alias ElixirBear.BackgroundImage
 
   # Settings
 
@@ -144,5 +145,63 @@ defmodule ElixirBear.Chat do
           if String.length(content) > 50, do: title <> "...", else: title
         end)
     end
+  end
+
+  # Background Images
+
+  @doc """
+  Returns the list of background images.
+  """
+  def list_background_images do
+    BackgroundImage
+    |> order_by([b], desc: b.inserted_at)
+    |> Repo.all()
+  end
+
+  @doc """
+  Gets a single background image.
+  """
+  def get_background_image!(id), do: Repo.get!(BackgroundImage, id)
+
+  @doc """
+  Gets the currently selected background image.
+  """
+  def get_selected_background_image do
+    BackgroundImage
+    |> where([b], b.is_selected == true)
+    |> Repo.one()
+  end
+
+  @doc """
+  Creates a background image.
+  """
+  def create_background_image(attrs \\ %{}) do
+    %BackgroundImage{}
+    |> BackgroundImage.changeset(attrs)
+    |> Repo.insert()
+  end
+
+  @doc """
+  Selects a background image and deselects all others.
+  """
+  def select_background_image(id) do
+    Repo.transaction(fn ->
+      # Deselect all images
+      BackgroundImage
+      |> Repo.update_all(set: [is_selected: false])
+
+      # Select the chosen image
+      background_image = get_background_image!(id)
+      background_image
+      |> BackgroundImage.changeset(%{is_selected: true})
+      |> Repo.update!()
+    end)
+  end
+
+  @doc """
+  Deletes a background image.
+  """
+  def delete_background_image(%BackgroundImage{} = background_image) do
+    Repo.delete(background_image)
   end
 end

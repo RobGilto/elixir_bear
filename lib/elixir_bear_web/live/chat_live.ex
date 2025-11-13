@@ -6,6 +6,7 @@ defmodule ElixirBearWeb.ChatLive do
   @impl true
   def mount(_params, _session, socket) do
     conversations = Chat.list_conversations()
+    selected_background = Chat.get_selected_background_image()
 
     socket =
       socket
@@ -15,6 +16,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:input, "")
       |> assign(:loading, false)
       |> assign(:error, nil)
+      |> assign(:selected_background, selected_background)
 
     {:ok, socket}
   end
@@ -66,7 +68,8 @@ defmodule ElixirBearWeb.ChatLive do
     conversations = Chat.list_conversations()
 
     socket =
-      if socket.assigns.current_conversation && socket.assigns.current_conversation.id == String.to_integer(id) do
+      if socket.assigns.current_conversation &&
+           socket.assigns.current_conversation.id == String.to_integer(id) do
         socket
         |> assign(:conversations, conversations)
         |> assign(:current_conversation, nil)
@@ -320,7 +323,7 @@ defmodule ElixirBearWeb.ChatLive do
                     "bg-base-100"
                 ]}
               >
-                <span class="text-sm truncate block"><%= conversation.title %></span>
+                <span class="text-sm truncate block">{conversation.title}</span>
               </.link>
               <button
                 phx-click="delete_conversation"
@@ -382,11 +385,20 @@ defmodule ElixirBearWeb.ChatLive do
       <div class="flex-1 flex flex-col">
         <%= if @current_conversation do %>
           <!-- Messages -->
-          <div class="flex-1 overflow-y-auto p-6 space-y-4">
+          <div
+            class="flex-1 overflow-y-auto p-6 space-y-4 bg-cover bg-center bg-no-repeat"
+            style={
+              if @selected_background do
+                "background-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('#{@selected_background.file_path}');"
+              else
+                ""
+              end
+            }
+          >
             <%= if @error do %>
               <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
                 <p class="font-bold">Error</p>
-                <p><%= @error %></p>
+                <p>{@error}</p>
               </div>
             <% end %>
 
@@ -401,9 +413,9 @@ defmodule ElixirBearWeb.ChatLive do
                   message.role == "assistant" && "bg-base-100 text-base-content shadow"
                 ]}>
                   <div class="text-sm font-medium mb-1">
-                    <%= if message.role == "user", do: "You", else: "Assistant" %>
+                    {if message.role == "user", do: "You", else: "ElixirBear"}
                   </div>
-                  <div class="whitespace-pre-wrap"><%= message.content %></div>
+                  <div class="whitespace-pre-wrap">{message.content}</div>
                 </div>
               </div>
             <% end %>
