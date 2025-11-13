@@ -222,16 +222,47 @@ defmodule ElixirBearWeb.ChatLive do
         {:noreply, put_flash(socket, :error, "Ollama is not running or configured correctly")}
 
       true ->
+        # Process uploaded files
+        uploaded_files =
+          consume_uploaded_entries(socket, :message_files, fn %{path: path}, entry ->
+            process_uploaded_file(path, entry)
+          end)
+
+        # Read text file contents and append to message
+        text_content =
+          uploaded_files
+          |> Enum.filter(fn {file_type, _, _, _, _} -> file_type == "text" end)
+          |> Enum.map(fn {_, file_path, original_name, _, _} ->
+            content = File.read!(Path.join(["priv", "static"] ++ String.split(file_path, "/", trim: true)))
+            "\n\n--- File: #{original_name} ---\n#{content}\n--- End of #{original_name} ---"
+          end)
+          |> Enum.join("\n")
+
+        # Combine user message with text file contents
+        full_message = if text_content != "", do: user_message <> text_content, else: user_message
+
         # Save user message
-        {:ok, _message} =
+        {:ok, saved_message} =
           Chat.create_message(%{
             conversation_id: conversation.id,
             role: "user",
-            content: user_message
+            content: full_message
           })
 
+        # Save file attachments
+        Enum.each(uploaded_files, fn {file_type, file_path, original_name, mime_type, file_size} ->
+          Chat.create_message_attachment(%{
+            message_id: saved_message.id,
+            file_type: file_type,
+            file_path: file_path,
+            original_name: original_name,
+            mime_type: mime_type,
+            file_size: file_size
+          })
+        end)
+
         # Add user message to display
-        messages = socket.assigns.messages ++ [%{role: "user", content: user_message}]
+        messages = socket.assigns.messages ++ [%{role: "user", content: full_message}]
 
         # Add temporary assistant message
         messages = messages ++ [%{role: "assistant", content: ""}]
@@ -299,6 +330,48 @@ defmodule ElixirBearWeb.ChatLive do
 
         {:noreply, socket}
     end
+  end
+
+  defp process_uploaded_file(path, entry) do
+    # Determine file type based on MIME type
+    file_type =
+      cond do
+        String.starts_with?(entry.client_type, "image/") -> "image"
+        String.starts_with?(entry.client_type, "audio/") -> "audio"
+        true -> "text"
+      end
+
+    # Generate unique filename
+    ext = Path.extname(entry.client_name)
+    filename = "#{System.system_time(:second)}_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
+
+    # Determine subdirectory based on file type
+    subdir = case file_type do
+      "image" -> "images"
+      "audio" -> "audio"
+      "text" -> "text"
+    end
+
+    dest = Path.join(["priv", "static", "uploads", "attachments", subdir, filename])
+
+    # Ensure directory exists
+    dest |> Path.dirname() |> File.mkdir_p!()
+
+    # Copy file to destination
+    File.cp!(path, dest)
+
+    # Ensure file is synced to disk
+    {:ok, fd} = :file.open(dest, [:read, :raw])
+    :ok = :file.sync(fd)
+    :ok = :file.close(fd)
+
+    # Get file size
+    %{size: file_size} = File.stat!(dest)
+
+    # Create file path for database
+    file_path = "/uploads/attachments/#{subdir}/#{filename}"
+
+    {file_type, file_path, entry.client_name, entry.client_type, file_size}
   end
 
   defp valid_openai_config? do
