@@ -15,6 +15,12 @@ defmodule ElixirBearWeb.Endpoint do
     websocket: [connect_info: [session: @session_options]],
     longpoll: [connect_info: [session: @session_options]]
 
+  # Serve uploaded files
+  plug Plug.Static,
+    at: "/uploads",
+    from: Application.app_dir(:elixir_bear, "priv/static/uploads"),
+    gzip: false
+
   # Serve at "/" the static files from "priv/static" directory.
   #
   # When code reloading is disabled (e.g., in production),

@@ -227,6 +227,11 @@ defmodule ElixirBearWeb.SettingsLive do
         # Copy file to destination
         File.cp!(path, dest)
 
+        # Ensure file is synced to disk
+        {:ok, fd} = :file.open(dest, [:read, :raw])
+        :ok = :file.sync(fd)
+        :ok = :file.close(fd)
+
         # Create database entry
         file_path = "/uploads/backgrounds/#{filename}"
         {:ok, background_image} = Chat.create_background_image(%{
@@ -553,11 +558,12 @@ defmodule ElixirBearWeb.SettingsLive do
             <% else %>
               <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <%= for bg_image <- @background_images do %>
-                  <div class={"relative group rounded-lg overflow-hidden border-2 #{if @selected_background && @selected_background.id == bg_image.id, do: "border-primary shadow-lg", else: "border-base-300"}"}>
+                  <div class={"relative group rounded-lg overflow-hidden border-2 bg-base-200 #{if @selected_background && @selected_background.id == bg_image.id, do: "border-primary shadow-lg", else: "border-base-300"}"}>
                     <img
-                      src={bg_image.file_path}
+                      src={"#{bg_image.file_path}?v=#{bg_image.id}"}
                       alt={bg_image.original_name}
                       class="w-full h-32 object-cover"
+                      onerror="this.style.display='none'"
                     />
                     <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center gap-2">
                       <button
