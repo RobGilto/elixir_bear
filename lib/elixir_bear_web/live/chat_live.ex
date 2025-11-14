@@ -2,6 +2,7 @@ defmodule ElixirBearWeb.ChatLive do
   use ElixirBearWeb, :live_view
 
   alias ElixirBear.{Chat, Ollama, OpenAI}
+  alias ElixirBearWeb.Markdown
 
   @impl true
   def mount(_params, _session, socket) do
@@ -113,6 +114,30 @@ defmodule ElixirBearWeb.ChatLive do
   @impl true
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :message_files, ref)}
+  end
+
+  def handle_event("update_code_block", %{"message_id" => message_id, "new_content" => new_content}, socket) do
+    # Get the message from the database
+    message = Chat.get_message!(message_id)
+
+    # For simplicity, if the message is just a code block (starts with ```), replace entirely
+    # Otherwise, try to find and replace the first code block
+    updated_content =
+      if String.starts_with?(String.trim(message.content), "```") do
+        new_content
+      else
+        replace_first_code_block(message.content, new_content)
+      end
+
+    case Chat.update_message(message, %{content: updated_content}) do
+      {:ok, _updated_message} ->
+        # Reload messages to show the updated content
+        messages = Chat.list_messages_with_attachments(socket.assigns.current_conversation.id)
+        {:noreply, assign(socket, :messages, messages)}
+
+      {:error, _changeset} ->
+        {:noreply, put_flash(socket, :error, "Failed to update code block")}
+    end
   end
 
   @impl true
@@ -555,6 +580,8 @@ defmodule ElixirBearWeb.ChatLive do
         <%= if @current_conversation do %>
           <!-- Messages -->
           <div
+            phx-hook="CodeBlock"
+            id="messages-container"
             class="flex-1 overflow-y-auto p-6 space-y-4 bg-cover bg-center bg-no-repeat"
             style={
               if @selected_background do
@@ -628,7 +655,7 @@ defmodule ElixirBearWeb.ChatLive do
                     </div>
                   <% end %>
 
-                  <div class="whitespace-pre-wrap">{message.content}</div>
+                  <div class="prose prose-sm max-w-none message-content">{Markdown.to_html(message.content, message_id: message.id)}</div>
                 </div>
               </div>
             <% end %>
@@ -743,5 +770,39 @@ defmodule ElixirBearWeb.ChatLive do
       </div>
     </div>
     """
+  end
+
+  # Private helper to replace the first code block in markdown
+  defp replace_first_code_block(markdown, new_code) do
+    # Match the first code block (```language\n...code...\n```)
+    regex = ~r/```\w*\n.*?```/s
+
+    case Regex.run(regex, markdown, return: :index) do
+      [{start_pos, length}] ->
+        # Extract the language identifier from the original code block
+        original_block = String.slice(markdown, start_pos, length)
+        lang = extract_language(original_block)
+
+        # Create new code block with the same language
+        new_block = "```#{lang}\n#{new_code}\n```"
+
+        # Replace the code block
+        before = String.slice(markdown, 0, start_pos)
+        after_pos = start_pos + length
+        after_text = String.slice(markdown, after_pos..-1//1)
+
+        before <> new_block <> after_text
+
+      nil ->
+        # No code block found, return original
+        markdown
+    end
+  end
+
+  defp extract_language(code_block) do
+    case Regex.run(~r/```(\w*)/, code_block) do
+      [_, lang] -> lang
+      _ -> ""
+    end
   end
 end

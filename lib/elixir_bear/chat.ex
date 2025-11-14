@@ -102,6 +102,20 @@ defmodule ElixirBear.Chat do
   end
 
   @doc """
+  Gets a single message.
+  """
+  def get_message!(id), do: Repo.get!(Message, id)
+
+  @doc """
+  Updates a message.
+  """
+  def update_message(%Message{} = message, attrs) do
+    message
+    |> Message.changeset(attrs)
+    |> Repo.update()
+  end
+
+  @doc """
   Gets messages for a conversation.
   """
   def list_messages(conversation_id) do
