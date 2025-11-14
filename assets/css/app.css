@@ -103,3 +103,184 @@
 [data-phx-session], [data-phx-teleported-src] { display: contents }
 
 /* This file is for your main application CSS */
+
+/* Code block styling */
+.message-content pre {
+  position: relative;
+  background-color: oklch(25% 0.01 252);
+  border: 1px solid oklch(35% 0.02 252);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  margin: 1rem 0;
+  overflow-x: auto;
+}
+
+[data-theme="light"] .message-content pre {
+  background-color: oklch(95% 0.005 252);
+  border-color: oklch(85% 0.01 252);
+}
+
+.message-content pre code {
+  display: block;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: oklch(95% 0.01 252);
+  filter: blur(5px);
+  transition: filter 0.3s ease;
+  user-select: none;
+}
+
+.message-content pre code.revealed {
+  filter: blur(0);
+  user-select: text;
+}
+
+.message-content pre code.editing {
+  display: none;
+}
+
+.message-content pre textarea.code-editor {
+  display: none;
+  width: 100%;
+  min-height: 150px;
+  font-family: 'Monaco', 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  background-color: oklch(25% 0.01 252);
+  color: oklch(95% 0.01 252);
+  border: 1px solid oklch(45% 0.15 277);
+  border-radius: 0.25rem;
+  padding: 0.5rem;
+  resize: vertical;
+}
+
+[data-theme="light"] .message-content pre textarea.code-editor {
+  background-color: oklch(95% 0.005 252);
+  color: oklch(25% 0.01 252);
+}
+
+.message-content pre textarea.code-editor.active {
+  display: block;
+}
+
+[data-theme="light"] .message-content pre code {
+  color: oklch(25% 0.01 252);
+}
+
+.message-content .code-controls {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+  z-index: 10;
+}
+
+.message-content .code-button {
+  padding: 0.375rem 0.75rem;
+  background-color: oklch(45% 0.15 277);
+  color: oklch(98% 0.01 256);
+  border: none;
+  border-radius: 0.25rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.message-content .code-button:hover {
+  background-color: oklch(55% 0.2 277);
+  transform: translateY(-1px);
+}
+
+.message-content .code-button.copied,
+.message-content .code-button.success {
+  background-color: oklch(60% 0.12 184);
+}
+
+.message-content .reveal-button.revealed {
+  background-color: oklch(50% 0.15 340);
+}
+
+.message-content .reveal-button.revealed:hover {
+  background-color: oklch(60% 0.2 340);
+}
+
+.message-content .edit-button.editing {
+  background-color: oklch(60% 0.18 58);
+}
+
+.message-content .edit-button.editing:hover {
+  background-color: oklch(70% 0.2 58);
+}
+
+/* Makeup syntax highlighting theme adjustments for dark mode */
+.highlight .unselectable { user-select: none; }
+.highlight .hll { background-color: oklch(35% 0.02 252); }
+.highlight .c { color: oklch(60% 0.05 252); font-style: italic; } /* Comment */
+.highlight .k { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword */
+.highlight .o { color: oklch(75% 0.15 50); } /* Operator */
+.highlight .cm { color: oklch(60% 0.05 252); font-style: italic; } /* Comment.Multiline */
+.highlight .cp { color: oklch(70% 0.15 120); font-weight: bold; } /* Comment.Preproc */
+.highlight .c1 { color: oklch(60% 0.05 252); font-style: italic; } /* Comment.Single */
+.highlight .cs { color: oklch(60% 0.05 252); font-weight: bold; font-style: italic; } /* Comment.Special */
+.highlight .gd { color: oklch(65% 0.25 17); } /* Generic.Deleted */
+.highlight .ge { font-style: italic; } /* Generic.Emph */
+.highlight .gr { color: oklch(65% 0.25 17); } /* Generic.Error */
+.highlight .gh { color: oklch(75% 0.1 252); font-weight: bold; } /* Generic.Heading */
+.highlight .gi { color: oklch(65% 0.12 184); } /* Generic.Inserted */
+.highlight .go { color: oklch(70% 0.05 252); } /* Generic.Output */
+.highlight .gp { color: oklch(75% 0.1 252); font-weight: bold; } /* Generic.Prompt */
+.highlight .gs { font-weight: bold; } /* Generic.Strong */
+.highlight .gu { color: oklch(75% 0.1 252); font-weight: bold; } /* Generic.Subheading */
+.highlight .gt { color: oklch(65% 0.25 17); } /* Generic.Traceback */
+.highlight .kc { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword.Constant */
+.highlight .kd { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword.Declaration */
+.highlight .kn { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword.Namespace */
+.highlight .kp { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword.Pseudo */
+.highlight .kr { color: oklch(70% 0.2 340); font-weight: bold; } /* Keyword.Reserved */
+.highlight .kt { color: oklch(70% 0.2 210); font-weight: bold; } /* Keyword.Type */
+.highlight .m { color: oklch(75% 0.15 50); } /* Literal.Number */
+.highlight .s { color: oklch(70% 0.12 120); } /* Literal.String */
+.highlight .na { color: oklch(75% 0.15 200); } /* Name.Attribute */
+.highlight .nb { color: oklch(70% 0.2 277); } /* Name.Builtin */
+.highlight .nc { color: oklch(75% 0.2 50); font-weight: bold; } /* Name.Class */
+.highlight .no { color: oklch(75% 0.2 17); } /* Name.Constant */
+.highlight .nd { color: oklch(75% 0.2 340); } /* Name.Decorator */
+.highlight .ni { color: oklch(75% 0.1 252); font-weight: bold; } /* Name.Entity */
+.highlight .ne { color: oklch(75% 0.2 50); font-weight: bold; } /* Name.Exception */
+.highlight .nf { color: oklch(75% 0.2 200); } /* Name.Function */
+.highlight .nl { color: oklch(75% 0.15 200); } /* Name.Label */
+.highlight .nn { color: oklch(75% 0.2 50); } /* Name.Namespace */
+.highlight .nt { color: oklch(70% 0.2 277); font-weight: bold; } /* Name.Tag */
+.highlight .nv { color: oklch(75% 0.2 210); } /* Name.Variable */
+.highlight .ow { color: oklch(75% 0.15 50); font-weight: bold; } /* Operator.Word */
+.highlight .w { color: oklch(70% 0.05 252); } /* Text.Whitespace */
+.highlight .mf { color: oklch(75% 0.15 50); } /* Literal.Number.Float */
+.highlight .mh { color: oklch(75% 0.15 50); } /* Literal.Number.Hex */
+.highlight .mi { color: oklch(75% 0.15 50); } /* Literal.Number.Integer */
+.highlight .mo { color: oklch(75% 0.15 50); } /* Literal.Number.Oct */
+.highlight .sb { color: oklch(70% 0.12 120); } /* Literal.String.Backtick */
+.highlight .sc { color: oklch(70% 0.12 120); } /* Literal.String.Char */
+.highlight .sd { color: oklch(70% 0.12 120); font-style: italic; } /* Literal.String.Doc */
+.highlight .s2 { color: oklch(70% 0.12 120); } /* Literal.String.Double */
+.highlight .se { color: oklch(75% 0.2 17); } /* Literal.String.Escape */
+.highlight .sh { color: oklch(70% 0.12 120); } /* Literal.String.Heredoc */
+.highlight .si { color: oklch(75% 0.15 50); } /* Literal.String.Interpol */
+.highlight .sx { color: oklch(70% 0.12 120); } /* Literal.String.Other */
+.highlight .sr { color: oklch(70% 0.15 340); } /* Literal.String.Regex */
+.highlight .s1 { color: oklch(70% 0.12 120); } /* Literal.String.Single */
+.highlight .ss { color: oklch(75% 0.2 340); } /* Literal.String.Symbol */
+.highlight .bp { color: oklch(70% 0.2 277); } /* Name.Builtin.Pseudo */
+.highlight .vc { color: oklch(75% 0.2 210); } /* Name.Variable.Class */
+.highlight .vg { color: oklch(75% 0.2 210); } /* Name.Variable.Global */
+.highlight .vi { color: oklch(75% 0.2 210); } /* Name.Variable.Instance */
+.highlight .il { color: oklch(75% 0.15 50); } /* Literal.Number.Integer.Long */
+
+/* Light mode syntax highlighting */
+[data-theme="light"] .highlight .c { color: oklch(50% 0.05 252); }
+[data-theme="light"] .highlight .k { color: oklch(45% 0.2 340); }
+[data-theme="light"] .highlight .s { color: oklch(40% 0.12 120); }
+[data-theme="light"] .highlight .nb { color: oklch(40% 0.2 277); }
+[data-theme="light"] .highlight .nf { color: oklch(40% 0.2 200); }

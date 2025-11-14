@@ -62,6 +62,122 @@ const Hooks = {
         }
       })
     }
+  },
+  CodeBlock: {
+    mounted() {
+      this.setupCodeBlockButtons()
+    },
+    updated() {
+      this.setupCodeBlockButtons()
+    },
+    setupCodeBlockButtons() {
+      // Setup reveal/hide buttons
+      this.el.querySelectorAll('.reveal-button').forEach(button => {
+        button.onclick = (e) => {
+          e.preventDefault()
+          const pre = button.closest('pre')
+          const code = pre.querySelector('code')
+
+          if (code.classList.contains('revealed')) {
+            code.classList.remove('revealed')
+            button.textContent = 'Reveal'
+            button.classList.remove('revealed')
+          } else {
+            code.classList.add('revealed')
+            button.textContent = 'Hide'
+            button.classList.add('revealed')
+          }
+        }
+      })
+
+      // Setup edit buttons
+      this.el.querySelectorAll('.edit-button').forEach(button => {
+        button.onclick = (e) => {
+          e.preventDefault()
+          const pre = button.closest('pre')
+          const code = pre.querySelector('code')
+          const textarea = pre.querySelector('.code-editor')
+          const messageId = pre.getAttribute('data-message-id')
+
+          if (button.classList.contains('editing')) {
+            // Save mode - send to server for persistence
+            const newCode = textarea.value
+
+            if (messageId) {
+              // Push event to LiveView to save in database
+              this.pushEvent("update_code_block", {
+                message_id: parseInt(messageId),
+                new_content: newCode
+              })
+
+              // Show saving feedback
+              button.textContent = 'Saving...'
+              button.disabled = true
+            } else {
+              // No message ID - just update locally (backward compatibility)
+              this.updateCodeBlockLocally(code, textarea, button, newCode)
+            }
+          } else {
+            // Edit mode - show textarea
+            code.classList.add('editing')
+            textarea.classList.add('active')
+            button.textContent = 'Save'
+            button.classList.add('editing')
+
+            // Focus the textarea
+            textarea.focus()
+          }
+        }
+      })
+
+      // Setup copy buttons
+      this.el.querySelectorAll('.copy-button').forEach(button => {
+        button.onclick = (e) => {
+          e.preventDefault()
+          const code = button.getAttribute('data-clipboard-text')
+          navigator.clipboard.writeText(code).then(() => {
+            const originalText = button.textContent
+            button.textContent = 'Copied!'
+            button.classList.add('copied')
+            setTimeout(() => {
+              button.textContent = originalText
+              button.classList.remove('copied')
+            }, 2000)
+          }).catch(err => {
+            console.error('Failed to copy:', err)
+          })
+        }
+      })
+    },
+    updateCodeBlockLocally(code, textarea, button, newCode) {
+      // Local update without database persistence
+      code.textContent = newCode
+
+      // Update the copy button's data
+      const copyButton = button.closest('pre').querySelector('.copy-button')
+      if (copyButton) {
+        const escapedCode = newCode
+          .replace(/&/g, '&amp;')
+          .replace(/"/g, '&quot;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+        copyButton.setAttribute('data-clipboard-text', escapedCode)
+      }
+
+      // Switch back to view mode
+      code.classList.remove('editing')
+      textarea.classList.remove('active')
+      button.textContent = 'Edit'
+      button.classList.remove('editing')
+
+      // Show success feedback
+      button.textContent = 'Saved!'
+      button.classList.add('success')
+      setTimeout(() => {
+        button.textContent = 'Edit'
+        button.classList.remove('success')
+      }, 2000)
+    }
   }
 }
 
