@@ -655,7 +655,9 @@ defmodule ElixirBearWeb.ChatLive do
                     </div>
                   <% end %>
 
-                  <div class="prose prose-sm max-w-none message-content">{Markdown.to_html(message.content, message_id: message.id)}</div>
+                  <div class="prose prose-sm max-w-none message-content">
+                    {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
+                  </div>
                 </div>
               </div>
             <% end %>

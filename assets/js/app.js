@@ -134,10 +134,22 @@ const Hooks = {
       this.el.querySelectorAll('.copy-button').forEach(button => {
         button.onclick = (e) => {
           e.preventDefault()
-          const code = button.getAttribute('data-clipboard-text')
-          navigator.clipboard.writeText(code).then(() => {
+          const rawCode = button.getAttribute('data-clipboard-text')
+          const isShiftClick = e.shiftKey
+
+          // Process the code based on click type
+          let processedCode
+          try {
+            processedCode = this.processIExCode(rawCode, isShiftClick)
+          } catch (err) {
+            console.error('Error processing IEx code:', err)
+            processedCode = rawCode // Fallback to raw code
+          }
+
+          navigator.clipboard.writeText(processedCode).then(() => {
             const originalText = button.textContent
-            button.textContent = 'Copied!'
+            const feedbackText = isShiftClick ? 'Copied clean!' : 'Copied!'
+            button.textContent = feedbackText
             button.classList.add('copied')
             setTimeout(() => {
               button.textContent = originalText
@@ -148,6 +160,109 @@ const Hooks = {
           })
         }
       })
+    },
+    processIExCode(code, cleanOnly = false) {
+      // Detect if this is an IEx session (contains iex> prompts)
+      const hasIExPrompts = code.includes('iex>')
+
+      if (!hasIExPrompts) {
+        // Not an IEx session, return as-is
+        return code
+      }
+
+      const lines = code.split('\n')
+      const processedLines = []
+      let i = 0
+
+      while (i < lines.length) {
+        const line = lines[i]
+        const trimmedLine = line.trim()
+
+        // Check if this is a new IEx command (starts with iex>)
+        if (trimmedLine.startsWith('iex>')) {
+          // Start of a new command - collect all lines until next iex> or end
+          const commandLines = []
+          const codeContent = trimmedLine.replace(/^iex>\s*/, '')
+          if (codeContent) {
+            commandLines.push(codeContent)
+          }
+          i++
+
+          // Collect continuation lines (with ...> or without prompt)
+          while (i < lines.length) {
+            const nextLine = lines[i]
+            const nextTrimmed = nextLine.trim()
+
+            // Stop if we hit the next iex> command
+            if (nextTrimmed.startsWith('iex>')) {
+              break
+            }
+
+            // Handle continuation prompt (...>)
+            if (nextTrimmed.startsWith('...>')) {
+              const contContent = nextTrimmed.replace(/^\.\.\.>\s*/, '')
+              if (contContent) {
+                commandLines.push(contContent)
+              }
+              i++
+              continue
+            }
+
+            // Empty line or line without prompt
+            if (nextTrimmed.length === 0) {
+              commandLines.push('')
+              i++
+              continue
+            }
+
+            // Non-empty line without prompt - could be code continuation or output
+            // Determine if this is output or code continuation
+            const isIndented = nextLine.length > 0 && (nextLine[0] === ' ' || nextLine[0] === '\t')
+
+            // Elixir keywords that can appear unindented in code (block closers, flow control)
+            const codeKeywords = ['end', 'else', 'rescue', 'catch', 'after']
+            const isCodeKeyword = codeKeywords.includes(nextTrimmed)
+
+            // Output typically starts with these patterns
+            const looksLikeOutput = /^[\d:{\[%"']/.test(nextTrimmed) ||
+                                   nextTrimmed === 'true' ||
+                                   nextTrimmed === 'false' ||
+                                   nextTrimmed === 'nil' ||
+                                   nextTrimmed.startsWith('{:module,')
+
+            const isOutput = !isIndented && !isCodeKeyword && looksLikeOutput
+
+            if (isOutput) {
+              // This is output
+              if (!cleanOnly) {
+                commandLines.push(`# => ${nextTrimmed}`)
+              }
+              i++
+              // Skip remaining empty lines until next command
+              while (i < lines.length && lines[i].trim().length === 0) {
+                if (!cleanOnly) {
+                  commandLines.push('')
+                }
+                i++
+              }
+              break
+            } else {
+              // This is code continuation (preserve as-is)
+              commandLines.push(nextLine)
+              i++
+            }
+          }
+
+          // Add all collected lines
+          processedLines.push(...commandLines)
+        } else {
+          // Line that doesn't start with iex> (shouldn't happen in well-formed IEx output)
+          processedLines.push(line)
+          i++
+        }
+      }
+
+      return processedLines.join('\n')
     },
     updateCodeBlockLocally(code, textarea, button, newCode) {
       // Local update without database persistence
