@@ -88,15 +88,19 @@ defmodule ElixirBear.Ollama do
     ]
 
     # Use Req with into option for streaming
+    Logger.debug("Sending request to Ollama: #{api_url}")
+
     case Req.post(api_url,
            body: body,
            headers: headers,
            into: fn {:data, data}, {req, resp} ->
+             Logger.debug("Received #{byte_size(data)} bytes from Ollama")
              process_stream_chunk(data, callback)
              {:cont, {req, resp}}
            end
          ) do
-      {:ok, _} ->
+      {:ok, response} ->
+        Logger.debug("Ollama request completed: #{inspect(response.status)}")
         :ok
 
       {:error, reason} ->
@@ -178,12 +182,19 @@ defmodule ElixirBear.Ollama do
         json_line ->
           case Jason.decode(json_line) do
             {:ok, %{"message" => %{"content" => content}}} ->
+              Logger.debug("Calling callback with content: #{String.slice(content, 0..50)}")
               callback.(content)
 
             {:ok, %{"done" => true}} ->
+              Logger.debug("Received done signal from Ollama")
               :ok
 
-            _ ->
+            {:ok, decoded} ->
+              Logger.warning("Unexpected Ollama response format: #{inspect(decoded)}")
+              :ok
+
+            {:error, error} ->
+              Logger.error("Failed to parse Ollama JSON: #{inspect(error)}, line: #{json_line}")
               :ok
           end
       end

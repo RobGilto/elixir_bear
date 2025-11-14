@@ -1,7 +1,7 @@
 defmodule ElixirBearWeb.ChatLive do
   use ElixirBearWeb, :live_view
 
-  alias ElixirBear.{Chat, Ollama, OpenAI}
+  alias ElixirBear.{Chat, ConversationWorker, Ollama}
   alias ElixirBearWeb.Markdown
 
   @impl true
@@ -18,6 +18,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:loading, false)
       |> assign(:error, nil)
       |> assign(:selected_background, selected_background)
+      |> assign(:processing_conversations, MapSet.new())
       |> allow_upload(:message_files,
         accept: ~w(.jpg .jpeg .png .gif .webp
                    .mp3 .mpga .m4a .wav
@@ -33,14 +34,23 @@ defmodule ElixirBearWeb.ChatLive do
 
   @impl true
   def handle_params(%{"id" => id}, _uri, socket) do
+    # Unsubscribe from old conversation if exists
+    if socket.assigns[:current_conversation] do
+      Phoenix.PubSub.unsubscribe(ElixirBear.PubSub, "conversation:#{socket.assigns.current_conversation.id}")
+    end
+
     conversation = Chat.get_conversation!(id)
     messages = Chat.list_messages_with_attachments(id)
+
+    # Subscribe to PubSub for this conversation
+    Phoenix.PubSub.subscribe(ElixirBear.PubSub, "conversation:#{id}")
 
     socket =
       socket
       |> assign(:current_conversation, conversation)
       |> assign(:messages, messages)
       |> assign(:error, nil)
+      |> assign(:processing_conversations, Map.get(socket.assigns, :processing_conversations, MapSet.new()))
 
     {:noreply, socket}
   end
@@ -141,93 +151,89 @@ defmodule ElixirBearWeb.ChatLive do
   end
 
   @impl true
-  def handle_info({:stream_content, content}, socket) do
+  def handle_info({ConversationWorker, {:streaming_started, _user_message_id}}, socket) do
+    # Worker started streaming - already handled in send_message
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({ConversationWorker, {:content_update, content}}, socket) do
     # Update the last message (assistant's response) with new content
     messages = socket.assigns.messages
 
     updated_messages =
       case List.last(messages) do
         %{role: "assistant"} ->
-          List.update_at(messages, -1, fn msg ->
-            %{msg | content: msg.content <> content}
+          # Update the temp assistant message with new content
+          List.update_at(messages, -1, fn _msg ->
+            %{role: "assistant", content: content}
           end)
 
         _ ->
-          messages
+          # No temp message, add one
+          messages ++ [%{role: "assistant", content: content}]
       end
 
     {:noreply, assign(socket, :messages, updated_messages)}
   end
 
   @impl true
-  def handle_info({:stream_complete}, socket) do
-    # Get the final content from the last message (the accumulated assistant response)
-    final_content =
-      case List.last(socket.assigns.messages) do
-        %{role: "assistant", content: content} -> content
-        _ -> ""
-      end
-
-    # Save the complete assistant message only if we have content
+  def handle_info({ConversationWorker, {:streaming_complete, saved_message}}, socket) do
     conversation = socket.assigns.current_conversation
 
-    result =
-      if final_content != "" do
-        Chat.create_message(%{
-          conversation_id: conversation.id,
-          role: "assistant",
-          content: final_content
-        })
-      else
-        {:error, "No content received"}
-      end
-
-    case result do
-      {:ok, _message} ->
-        # Update conversation title if it's the first message
-        if length(socket.assigns.messages) == 2 do
-          title = Chat.generate_conversation_title(conversation.id)
-          {:ok, updated_conversation} = Chat.update_conversation(conversation, %{title: title})
-          conversations = Chat.list_conversations()
-
-          socket =
-            socket
-            |> assign(:current_conversation, updated_conversation)
-            |> assign(:conversations, conversations)
-            |> assign(:loading, false)
-
-          {:noreply, socket}
-        else
-          {:noreply, assign(socket, :loading, false)}
-        end
-
-      {:error, _reason} ->
-        # Remove the temporary assistant message if save failed
-        messages =
-          socket.assigns.messages
-          |> Enum.reject(fn msg -> msg.role == "assistant" && !Map.has_key?(msg, :id) end)
-
-        socket =
-          socket
-          |> assign(:messages, messages)
-          |> assign(:loading, false)
-          |> assign(:error, "Failed to save response. Please try again.")
-
-        {:noreply, socket}
-    end
-  end
-
-  @impl true
-  def handle_info({:error, error_message}, socket) do
-    # Remove the temporary assistant message
+    # Replace temp message with saved message
     messages =
       socket.assigns.messages
       |> Enum.reject(fn msg -> msg.role == "assistant" && !Map.has_key?(msg, :id) end)
+      |> Kernel.++([saved_message])
+
+    # Remove conversation from processing set
+    processing_conversations =
+      socket.assigns.processing_conversations
+      |> MapSet.delete(conversation.id)
+
+    # Update conversation title if it's the first exchange
+    socket =
+      if length(messages) == 2 do
+        title = Chat.generate_conversation_title(conversation.id)
+        {:ok, updated_conversation} = Chat.update_conversation(conversation, %{title: title})
+        conversations = Chat.list_conversations()
+
+        socket
+        |> assign(:current_conversation, updated_conversation)
+        |> assign(:conversations, conversations)
+      else
+        socket
+      end
 
     socket =
       socket
       |> assign(:messages, messages)
       |> assign(:loading, false)
+      |> assign(:processing_conversations, processing_conversations)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info({ConversationWorker, {:streaming_error, error_message}}, socket) do
+    conversation = socket.assigns.current_conversation
+
+    # Remove the temporary assistant message
+    messages =
+      socket.assigns.messages
+      |> Enum.reject(fn msg -> msg.role == "assistant" && !Map.has_key?(msg, :id) end)
+
+    # Remove conversation from processing set
+    processing_conversations =
+      socket.assigns.processing_conversations
+      |> MapSet.delete(conversation.id)
+
+    socket =
+      socket
+      |> assign(:messages, messages)
+      |> assign(:loading, false)
+      |> assign(:processing_conversations, processing_conversations)
       |> assign(:error, error_message)
 
     {:noreply, socket}
@@ -334,56 +340,32 @@ defmodule ElixirBearWeb.ChatLive do
             llm_messages
           end
 
-        # Check if any message has images
-        has_images =
-          filtered_messages
-          |> Enum.any?(fn msg ->
-            Map.has_key?(msg, :attachments) &&
-              Enum.any?(msg.attachments, fn att -> att.file_type == "image" end)
-          end)
+        # Start conversation worker for background inference
+        case ConversationWorker.start_inference(
+               conversation.id,
+               llm_messages,
+               saved_message.id
+             ) do
+          {:ok, _pid} ->
+            # Worker started successfully
+            # Track this conversation as processing
+            processing_conversations =
+              socket.assigns.processing_conversations
+              |> MapSet.put(conversation.id)
 
-        # Start async task to call LLM with streaming
-        parent = self()
+            socket = assign(socket, :processing_conversations, processing_conversations)
 
-        Task.start(fn ->
-          callback = fn chunk ->
-            send(parent, {:stream_content, chunk})
-          end
+            {:noreply, socket}
 
-          result =
-            # If there are images, always use OpenAI Vision API regardless of provider
-            if has_images do
-              api_key = Chat.get_setting_value("openai_api_key")
-              vision_model = Chat.get_setting_value("vision_model") || "gpt-4o"
-              OpenAI.stream_chat_completion(api_key, llm_messages, callback, model: vision_model)
-            else
-              case llm_provider do
-                "openai" ->
-                  api_key = Chat.get_setting_value("openai_api_key")
-                  model = Chat.get_setting_value("openai_model") || "gpt-3.5-turbo"
-                  OpenAI.stream_chat_completion(api_key, llm_messages, callback, model: model)
+          {:error, :already_running} ->
+            # A worker is already processing this conversation
+            {:noreply,
+             put_flash(socket, :info, "A response is already being generated for this conversation")}
 
-                "ollama" ->
-                  model = Chat.get_setting_value("ollama_model") || "codellama:latest"
-                  url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
-                  Ollama.stream_chat_completion(llm_messages, callback, model: model, url: url)
-
-                _ ->
-                  {:error, "Unknown LLM provider: #{llm_provider}"}
-              end
-            end
-
-          case result do
-            :ok ->
-              # Stream completed successfully, signal completion
-              send(parent, {:stream_complete})
-
-            {:error, reason} ->
-              send(parent, {:error, reason})
-          end
-        end)
-
-        {:noreply, socket}
+          {:error, reason} ->
+            # Failed to start worker
+            {:noreply, put_flash(socket, :error, "Failed to start inference: #{inspect(reason)}")}
+        end
     end
   end
 
@@ -517,7 +499,33 @@ defmodule ElixirBearWeb.ChatLive do
                     "bg-base-100"
                 ]}
               >
-                <span class="text-sm truncate block">{conversation.title}</span>
+                <div class="flex items-center gap-2">
+                  <span class="text-sm truncate block flex-1">{conversation.title}</span>
+                  <%= if MapSet.member?(@processing_conversations, conversation.id) do %>
+                    <svg
+                      class="animate-spin h-4 w-4 text-primary"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        class="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        stroke-width="4"
+                      >
+                      </circle>
+                      <path
+                        class="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                      >
+                      </path>
+                    </svg>
+                  <% end %>
+                </div>
               </.link>
               <button
                 phx-click="delete_conversation"
