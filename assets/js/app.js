@@ -113,6 +113,16 @@ const Hooks = {
               // Show saving feedback
               button.textContent = 'Saving...'
               button.disabled = true
+
+              // Reset button after a timeout (LiveView will re-render with new content)
+              setTimeout(() => {
+                // Exit edit mode
+                code.classList.remove('editing')
+                textarea.classList.remove('active')
+                button.textContent = 'Edit'
+                button.classList.remove('editing')
+                button.disabled = false
+              }, 1000)
             } else {
               // No message ID - just update locally (backward compatibility)
               this.updateCodeBlockLocally(code, textarea, button, newCode)
