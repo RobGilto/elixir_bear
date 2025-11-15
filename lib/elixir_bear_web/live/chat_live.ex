@@ -341,6 +341,9 @@ defmodule ElixirBearWeb.ChatLive do
           end
 
         # Start conversation worker for background inference
+        require Logger
+        Logger.info("Attempting to start worker for conversation #{conversation.id}")
+
         case ConversationWorker.start_inference(
                conversation.id,
                llm_messages,
@@ -348,6 +351,8 @@ defmodule ElixirBearWeb.ChatLive do
              ) do
           {:ok, _pid} ->
             # Worker started successfully
+            Logger.info("Worker started successfully for conversation #{conversation.id}")
+
             # Track this conversation as processing
             processing_conversations =
               socket.assigns.processing_conversations
@@ -359,11 +364,15 @@ defmodule ElixirBearWeb.ChatLive do
 
           {:error, :already_running} ->
             # A worker is already processing this conversation
+            Logger.warning("Worker already running for conversation #{conversation.id}")
+
             {:noreply,
              put_flash(socket, :info, "A response is already being generated for this conversation")}
 
           {:error, reason} ->
             # Failed to start worker
+            Logger.error("Failed to start worker: #{inspect(reason)}")
+
             {:noreply, put_flash(socket, :error, "Failed to start inference: #{inspect(reason)}")}
         end
     end
