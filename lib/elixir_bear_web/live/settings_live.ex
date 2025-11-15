@@ -13,6 +13,15 @@ defmodule ElixirBearWeb.SettingsLive do
     ollama_model = Chat.get_setting_value("ollama_model") || "codellama:latest"
     ollama_url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
 
+    # Solution extraction settings
+    solution_extraction_provider = Chat.get_setting_value("solution_extraction_provider") || "ollama"
+    solution_extraction_ollama_model = Chat.get_setting_value("solution_extraction_ollama_model") || "llama3.2"
+    solution_extraction_openai_model = Chat.get_setting_value("solution_extraction_openai_model") || "gpt-4o-mini"
+
+    # Solution router settings
+    enable_solution_router = Chat.get_setting_value("enable_solution_router") || "true"
+    solution_router_threshold = Chat.get_setting_value("solution_router_threshold") || "0.75"
+
     # Check Ollama connection status and fetch models
     {ollama_status, ollama_models} =
       case Ollama.check_connection(url: ollama_url) do
@@ -58,6 +67,11 @@ defmodule ElixirBearWeb.SettingsLive do
       |> assign(:ollama_models, ollama_models)
       |> assign(:ollama_url, ollama_url)
       |> assign(:ollama_status, ollama_status)
+      |> assign(:solution_extraction_provider, solution_extraction_provider)
+      |> assign(:solution_extraction_ollama_model, solution_extraction_ollama_model)
+      |> assign(:solution_extraction_openai_model, solution_extraction_openai_model)
+      |> assign(:enable_solution_router, enable_solution_router)
+      |> assign(:solution_router_threshold, solution_router_threshold)
       |> assign(:background_images, background_images)
       |> assign(:selected_background, selected_background)
       |> allow_upload(:background_image,
@@ -232,6 +246,78 @@ defmodule ElixirBearWeb.SettingsLive do
         _ ->
           socket
       end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("change_solution_extraction_provider", %{"provider" => provider}, socket) do
+    Chat.update_setting("solution_extraction_provider", provider)
+
+    socket =
+      socket
+      |> assign(:solution_extraction_provider, provider)
+      |> put_flash(:info, "Solution extraction provider updated to #{provider}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("update_solution_extraction_ollama_model", %{"value" => model}, socket) do
+    Chat.update_setting("solution_extraction_ollama_model", model)
+
+    socket =
+      socket
+      |> assign(:solution_extraction_ollama_model, model)
+      |> put_flash(:info, "Solution extraction model updated")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("update_solution_extraction_openai_model", %{"value" => model}, socket) do
+    Chat.update_setting("solution_extraction_openai_model", model)
+
+    socket =
+      socket
+      |> assign(:solution_extraction_openai_model, model)
+      |> put_flash(:info, "Solution extraction model updated")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_solution_router", _params, socket) do
+    current_value = socket.assigns.enable_solution_router
+    new_value = if current_value == "true", do: "false", else: "true"
+
+    Chat.update_setting("enable_solution_router", new_value)
+
+    socket =
+      socket
+      |> assign(:enable_solution_router, new_value)
+      |> put_flash(:info, "Solution router #{if new_value == "true", do: "enabled", else: "disabled"}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("update_solution_router_threshold", %{"value" => threshold}, socket) do
+    # Validate threshold is between 0.0 and 1.0
+    threshold_float = String.to_float(threshold)
+
+    threshold_clamped =
+      threshold_float
+      |> max(0.0)
+      |> min(1.0)
+      |> Float.to_string()
+
+    Chat.update_setting("solution_router_threshold", threshold_clamped)
+
+    socket =
+      socket
+      |> assign(:solution_router_threshold, threshold_clamped)
+      |> put_flash(:info, "Solution router threshold updated to #{threshold_clamped}")
 
     {:noreply, socket}
   end
@@ -544,6 +630,158 @@ defmodule ElixirBearWeb.SettingsLive do
             <p class="mt-1 text-sm text-base-content/70">
               Model used for analyzing images you attach to messages
             </p>
+          </div>
+        </div>
+
+        <!-- Solution Extraction Settings -->
+        <div class="border border-base-300 rounded-lg p-4 bg-base-100">
+          <h3 class="text-lg font-medium text-base-content mb-2">Solution Extraction (Treasure Trove)</h3>
+          <p class="text-sm text-base-content/70 mb-4">
+            Configure the LLM used to extract metadata from code solutions. This extracts topics, difficulty, and descriptions from conversations.
+          </p>
+
+          <!-- Provider Selection -->
+          <div class="mb-4">
+            <label class="block text-sm font-medium text-base-content mb-3">
+              Extraction LLM Provider
+            </label>
+            <div class="space-y-2">
+              <label class="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="solution_extraction_provider"
+                  value="ollama"
+                  checked={@solution_extraction_provider == "ollama"}
+                  phx-click="change_solution_extraction_provider"
+                  phx-value-provider="ollama"
+                  class="w-4 h-4 text-primary"
+                />
+                <span class="text-base-content">Ollama (Local, Free)</span>
+              </label>
+              <label class="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="radio"
+                  name="solution_extraction_provider"
+                  value="openai"
+                  checked={@solution_extraction_provider == "openai"}
+                  phx-click="change_solution_extraction_provider"
+                  phx-value-provider="openai"
+                  class="w-4 h-4 text-primary"
+                />
+                <span class="text-base-content">OpenAI</span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Model Selection based on Provider -->
+          <%= if @solution_extraction_provider == "ollama" do %>
+            <div>
+              <label for="solution_extraction_ollama_model" class="block text-sm font-medium text-base-content mb-2">
+                Ollama Model
+              </label>
+              <%= if length(@ollama_models) > 0 do %>
+                <select
+                  id="solution_extraction_ollama_model"
+                  name="value"
+                  phx-change="update_solution_extraction_ollama_model"
+                  class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                >
+                  <%= for model <- @ollama_models do %>
+                    <option value={model} selected={model == @solution_extraction_ollama_model}><%= model %></option>
+                  <% end %>
+                </select>
+                <p class="mt-1 text-sm text-base-content/70">
+                  Recommended: Small, fast models like llama3.2, qwen2.5:3b, or phi3
+                </p>
+              <% else %>
+                <input
+                  type="text"
+                  id="solution_extraction_ollama_model"
+                  value={@solution_extraction_ollama_model}
+                  phx-blur="update_solution_extraction_ollama_model"
+                  class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="llama3.2"
+                />
+                <p class="mt-1 text-sm text-base-content/70">
+                  No Ollama models found. Ensure Ollama is running and refresh models above.
+                </p>
+              <% end %>
+            </div>
+          <% else %>
+            <div>
+              <label for="solution_extraction_openai_model" class="block text-sm font-medium text-base-content mb-2">
+                OpenAI Model
+              </label>
+              <select
+                id="solution_extraction_openai_model"
+                name="value"
+                phx-change="update_solution_extraction_openai_model"
+                class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              >
+                <%= for model <- @openai_models do %>
+                  <option value={model} selected={model == @solution_extraction_openai_model}><%= model %></option>
+                <% end %>
+              </select>
+              <p class="mt-1 text-sm text-base-content/70">
+                Used for extracting metadata. Faster, cheaper models like gpt-4o-mini recommended.
+              </p>
+            </div>
+          <% end %>
+
+          <!-- Divider -->
+          <div class="divider"></div>
+
+          <!-- Solution Router Settings -->
+          <div class="mt-6">
+            <h4 class="text-md font-medium text-base-content mb-2">Solution Router</h4>
+            <p class="text-sm text-base-content/70 mb-4">
+              Automatically check Treasure Trove for similar solutions before calling the main LLM. Save time and API costs by reusing existing solutions.
+            </p>
+
+            <!-- Enable/Disable Toggle -->
+            <div class="mb-4">
+              <label class="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={@enable_solution_router == "true"}
+                  phx-click="toggle_solution_router"
+                  class="toggle toggle-primary"
+                />
+                <span class="text-base-content">
+                  Enable Solution Router <%= if @enable_solution_router == "true", do: "✓", else: "" %>
+                </span>
+              </label>
+              <p class="mt-1 text-sm text-base-content/70 ml-12">
+                When enabled, checks Treasure Trove for similar solutions before asking the LLM.
+              </p>
+            </div>
+
+            <!-- Similarity Threshold -->
+            <%= if @enable_solution_router == "true" do %>
+              <div>
+                <label for="solution_router_threshold" class="block text-sm font-medium text-base-content mb-2">
+                  Similarity Threshold: <%= @solution_router_threshold %>
+                </label>
+                <input
+                  type="range"
+                  id="solution_router_threshold"
+                  name="value"
+                  min="0.5"
+                  max="0.95"
+                  step="0.05"
+                  value={@solution_router_threshold}
+                  phx-change="update_solution_router_threshold"
+                  class="range range-primary"
+                />
+                <div class="flex justify-between text-xs text-base-content/70 mt-1">
+                  <span>More suggestions (0.5)</span>
+                  <span>Fewer, more precise (0.95)</span>
+                </div>
+                <p class="mt-2 text-sm text-base-content/70">
+                  Higher values = more confident matches required. Lower values = more suggestions (may include less relevant matches).
+                </p>
+              </div>
+            <% end %>
           </div>
         </div>
 

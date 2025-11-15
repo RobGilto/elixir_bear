@@ -20,6 +20,8 @@ defmodule ElixirBearWeb.Router do
     live "/", ChatLive
     live "/chat/:id", ChatLive
     live "/settings", SettingsLive
+    live "/solutions", SolutionsLive
+    live "/solutions/:id", SolutionsLive
   end
 
   # Other scopes may use custom stacks.
