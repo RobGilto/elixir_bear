@@ -224,8 +224,12 @@ defmodule ElixirBear.ConversationWorker do
     # Check if any message has images (requires OpenAI Vision)
     has_images =
       Enum.any?(llm_messages, fn msg ->
-        is_list(msg["content"]) and
-          Enum.any?(msg["content"], fn part -> part["type"] == "image_url" end)
+        content = Map.get(msg, :content) || Map.get(msg, "content")
+        is_list(content) and
+          Enum.any?(content, fn part ->
+            part_type = Map.get(part, :type) || Map.get(part, "type")
+            part_type == "image_url"
+          end)
       end)
 
     # Select provider and stream

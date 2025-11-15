@@ -282,7 +282,7 @@ defmodule ElixirBearWeb.ChatLive do
   @impl true
   def handle_event("update_solution_title", %{"value" => title}, socket) do
     case socket.assigns.extracted_solution do
-      %{solution_attrs: attrs} = solution ->
+      %{solution_attrs: _attrs} = solution ->
         updated_solution = put_in(solution.solution_attrs.title, title)
         {:noreply, assign(socket, :extracted_solution, updated_solution)}
 
@@ -1048,11 +1048,11 @@ defmodule ElixirBearWeb.ChatLive do
                   </div>
 
                   <!-- Save as Solution Button (only for assistant messages with code) -->
-                  <%= if message.role == "assistant" && String.contains?(message.content, "```") do %>
+                  <%= if message.role == "assistant" && String.contains?(message.content, "```") && Map.get(message, :id) do %>
                     <div class="mt-3 pt-3 border-t border-base-300">
                       <button
                         phx-click="save_as_solution"
-                        phx-value-message-id={message.id}
+                        phx-value-message-id={Map.get(message, :id)}
                         class="btn btn-sm btn-outline btn-primary gap-2"
                         title="Save this solution to Treasure Trove"
                       >
