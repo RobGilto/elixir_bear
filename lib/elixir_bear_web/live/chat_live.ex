@@ -621,7 +621,7 @@ defmodule ElixirBearWeb.ChatLive do
                   </div>
 
                   <!-- Show attachments if present -->
-                  <%= if Map.has_key?(message, :attachments) && length(message.attachments) > 0 do %>
+                  <%= if Map.has_key?(message, :attachments) && is_list(message.attachments) && length(message.attachments) > 0 do %>
                     <div class="mb-2 flex flex-wrap gap-2">
                       <%= for attachment <- message.attachments do %>
                         <%= cond do %>

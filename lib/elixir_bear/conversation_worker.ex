@@ -120,7 +120,9 @@ defmodule ElixirBear.ConversationWorker do
              content: state.content_buffer
            }) do
         {:ok, message} ->
-          broadcast(state.conversation_id, {:streaming_complete, message})
+          # Ensure attachments is an empty list (assistant messages have no attachments)
+          message_with_attachments = %{message | attachments: []}
+          broadcast(state.conversation_id, {:streaming_complete, message_with_attachments})
           # Stop the worker after completion
           {:stop, :normal, state}
 
