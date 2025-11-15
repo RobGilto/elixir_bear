@@ -24,10 +24,13 @@ defmodule ElixirBear.Ollama do
 
     api_url = "#{url}/api/chat"
 
+    # Normalize messages to ensure content is always a string
+    normalized_messages = normalize_messages(messages)
+
     body =
       %{
         model: model,
-        messages: messages,
+        messages: normalized_messages,
         stream: false,
         options: %{
           temperature: temperature
@@ -72,10 +75,13 @@ defmodule ElixirBear.Ollama do
 
     api_url = "#{url}/api/chat"
 
+    # Normalize messages to ensure content is always a string
+    normalized_messages = normalize_messages(messages)
+
     body =
       %{
         model: model,
-        messages: messages,
+        messages: normalized_messages,
         stream: true,
         options: %{
           temperature: temperature
@@ -158,6 +164,41 @@ defmodule ElixirBear.Ollama do
       {:error, reason} ->
         {:error, "Cannot list models: #{inspect(reason)}"}
     end
+  end
+
+  # Normalizes messages to ensure content is always a string.
+  # Ollama doesn't support multimodal content arrays, so we extract text from array-formatted content.
+  defp normalize_messages(messages) do
+    Enum.map(messages, &normalize_message/1)
+  end
+
+  defp normalize_message(%{"content" => content} = message) when is_list(content) do
+    # Extract text from multimodal content array
+    text_content =
+      content
+      |> Enum.filter(fn part -> part["type"] == "text" end)
+      |> Enum.map(fn part -> part["text"] end)
+      |> Enum.join("\n")
+
+    %{message | "content" => text_content}
+  end
+
+  defp normalize_message(%{content: content} = message) when is_list(content) do
+    # Handle atom keys as well
+    text_content =
+      content
+      |> Enum.filter(fn part ->
+        (is_map(part) && (part["type"] == "text" || part[:type] == "text"))
+      end)
+      |> Enum.map(fn part -> part["text"] || part[:text] end)
+      |> Enum.join("\n")
+
+    %{message | content: text_content}
+  end
+
+  defp normalize_message(message) do
+    # Content is already a string, return as-is
+    message
   end
 
   defp extract_message_content(%{"message" => %{"content" => content}}) do
