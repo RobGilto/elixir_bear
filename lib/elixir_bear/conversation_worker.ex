@@ -43,10 +43,40 @@ defmodule ElixirBear.ConversationWorker do
         {:ok, pid}
 
       {:error, {:already_started, _pid}} ->
-        {:error, :already_running}
+        # Check if the existing worker is actually processing
+        case get_status(conversation_id) do
+          {:ok, :streaming} ->
+            Logger.warning("Worker for conversation #{conversation_id} is still processing")
+            {:error, :already_running}
+
+          _ ->
+            # Worker is idle, not responding, or shutting down - clean it up and retry
+            Logger.info("Cleaning up stale worker for conversation #{conversation_id}")
+            stop_worker(conversation_id)
+            # Small delay to let the process fully terminate
+            Process.sleep(50)
+            # Retry once
+            start_inference(conversation_id, messages, user_message_id)
+        end
 
       error ->
         error
+    end
+  end
+
+  @doc """
+  Gets the status of a worker.
+  Returns {:ok, status} or {:error, :not_found}
+  """
+  def get_status(conversation_id) do
+    case GenServer.whereis(via_tuple(conversation_id)) do
+      nil -> {:error, :not_found}
+      pid ->
+        try do
+          GenServer.call(pid, :get_status, 100)
+        catch
+          :exit, _ -> {:error, :not_responding}
+        end
     end
   end
 
@@ -77,6 +107,11 @@ defmodule ElixirBear.ConversationWorker do
     }
 
     {:ok, state}
+  end
+
+  @impl true
+  def handle_call(:get_status, _from, state) do
+    {:reply, {:ok, state.status}, state}
   end
 
   @impl true
@@ -120,7 +155,9 @@ defmodule ElixirBear.ConversationWorker do
              content: state.content_buffer
            }) do
         {:ok, message} ->
-          broadcast(state.conversation_id, {:streaming_complete, message})
+          # Ensure attachments is an empty list (assistant messages have no attachments)
+          message_with_attachments = %{message | attachments: []}
+          broadcast(state.conversation_id, {:streaming_complete, message_with_attachments})
           # Stop the worker after completion
           {:stop, :normal, state}
 
@@ -154,6 +191,12 @@ defmodule ElixirBear.ConversationWorker do
   def handle_info({:DOWN, _ref, :process, _pid, _reason}, state) do
     # Task process went down, we handle completion via :stream_complete
     {:noreply, state}
+  end
+
+  @impl true
+  def terminate(reason, state) do
+    Logger.info("Worker terminating for conversation #{state.conversation_id}, reason: #{inspect(reason)}")
+    :ok
   end
 
   ## Private Functions

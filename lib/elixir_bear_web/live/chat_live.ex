@@ -19,6 +19,16 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:error, nil)
       |> assign(:selected_background, selected_background)
       |> assign(:processing_conversations, MapSet.new())
+      |> assign(:solution_extraction_task, nil)
+      |> assign(:extracting_solution, false)
+      |> assign(:show_solution_modal, false)
+      |> assign(:extracted_solution, nil)
+      |> assign(:show_router_modal, false)
+      |> assign(:matched_solution, nil)
+      |> assign(:match_confidence, 0.0)
+      |> assign(:pending_user_message, nil)
+      |> assign(:pending_llm_messages, nil)
+      |> assign(:pending_saved_message_id, nil)
       |> allow_upload(:message_files,
         accept: ~w(.jpg .jpeg .png .gif .webp
                    .mp3 .mpga .m4a .wav
@@ -124,6 +134,280 @@ defmodule ElixirBearWeb.ChatLive do
   @impl true
   def handle_event("cancel_upload", %{"ref" => ref}, socket) do
     {:noreply, cancel_upload(socket, :message_files, ref)}
+  end
+
+  @impl true
+  def handle_event("save_as_solution", %{"message-id" => message_id}, socket) do
+    alias ElixirBear.Solutions.{Packager, LLMExtractor}
+
+    message_id = String.to_integer(message_id)
+    assistant_message = Chat.get_message!(message_id)
+
+    # Find the user message (the one right before this assistant message)
+    messages = socket.assigns.messages
+    message_index = Enum.find_index(messages, fn m -> m.id == message_id end)
+
+    user_message = if message_index && message_index > 0 do
+      Enum.at(messages, message_index - 1)
+    else
+      nil
+    end
+
+    if user_message && user_message.role == "user" do
+      # Package and extract in a background task
+      task = Task.async(fn ->
+        case Packager.validate_and_package(user_message.id, assistant_message.id) do
+          {:ok, package} ->
+            case LLMExtractor.extract_metadata(package) do
+              {:ok, llm_metadata} ->
+                complete_package = Packager.merge_llm_metadata(package, llm_metadata)
+                {:ok, complete_package}
+
+              {:error, reason} ->
+                {:error, {:llm_extraction_failed, reason}}
+            end
+
+          {:error, reason} ->
+            {:error, {:packaging_failed, reason}}
+        end
+      end)
+
+      socket =
+        socket
+        |> assign(:solution_extraction_task, task)
+        |> assign(:extracting_solution, true)
+        |> put_flash(:info, "Extracting solution metadata...")
+
+      {:noreply, socket}
+    else
+      socket = put_flash(socket, :error, "Could not find the corresponding user message")
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("close_solution_modal", _params, socket) do
+    socket =
+      socket
+      |> assign(:show_solution_modal, false)
+      |> assign(:extracted_solution, nil)
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("stop_propagation", _params, socket) do
+    # This handler does nothing - it just prevents click events from bubbling up
+    # Used to prevent modal from closing when clicking inside it
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("close_router_modal", _params, socket) do
+    # User dismissed the router modal without choosing
+    # Proceed with normal LLM inference
+    conversation = socket.assigns.current_conversation
+    llm_messages = socket.assigns.pending_llm_messages
+    saved_message_id = socket.assigns.pending_saved_message_id
+
+    socket =
+      socket
+      |> assign(:show_router_modal, false)
+      |> assign(:matched_solution, nil)
+      |> assign(:match_confidence, 0.0)
+      |> assign(:pending_user_message, nil)
+      |> assign(:pending_llm_messages, nil)
+      |> assign(:pending_saved_message_id, nil)
+
+    start_llm_inference(socket, conversation, llm_messages, saved_message_id)
+  end
+
+  @impl true
+  def handle_event("use_router_solution", _params, socket) do
+    # User accepted the matched solution
+    matched_solution = socket.assigns.matched_solution
+    conversation = socket.assigns.current_conversation
+
+    # Create assistant message with the solution content
+    {:ok, saved_message} =
+      Chat.create_message(%{
+        conversation_id: conversation.id,
+        role: "assistant",
+        content: matched_solution.answer_content
+      })
+
+    # Update messages in socket
+    messages =
+      socket.assigns.messages
+      |> Enum.reject(fn msg -> msg.role == "assistant" && msg.content == "" end)
+
+    messages =
+      messages ++
+        [%{id: saved_message.id, role: "assistant", content: matched_solution.answer_content}]
+
+    socket =
+      socket
+      |> assign(:messages, messages)
+      |> assign(:loading, false)
+      |> assign(:show_router_modal, false)
+      |> assign(:matched_solution, nil)
+      |> assign(:match_confidence, 0.0)
+      |> assign(:pending_user_message, nil)
+      |> assign(:pending_llm_messages, nil)
+      |> assign(:pending_saved_message_id, nil)
+      |> put_flash(:info, "Used solution from Treasure Trove!")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("reject_router_solution", _params, socket) do
+    # User rejected the matched solution, proceed with LLM
+    conversation = socket.assigns.current_conversation
+    llm_messages = socket.assigns.pending_llm_messages
+    saved_message_id = socket.assigns.pending_saved_message_id
+
+    socket =
+      socket
+      |> assign(:show_router_modal, false)
+      |> assign(:matched_solution, nil)
+      |> assign(:match_confidence, 0.0)
+      |> assign(:pending_user_message, nil)
+      |> assign(:pending_llm_messages, nil)
+      |> assign(:pending_saved_message_id, nil)
+
+    start_llm_inference(socket, conversation, llm_messages, saved_message_id)
+  end
+
+  @impl true
+  def handle_event("update_solution_title", %{"value" => title}, socket) do
+    case socket.assigns.extracted_solution do
+      %{solution_attrs: attrs} = solution ->
+        updated_solution = put_in(solution.solution_attrs.title, title)
+        {:noreply, assign(socket, :extracted_solution, updated_solution)}
+
+      _ ->
+        # Solution not ready yet, ignore the update
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("update_solution_description", %{"value" => description}, socket) do
+    case socket.assigns.extracted_solution do
+      %{solution_attrs: %{metadata: _}} = solution ->
+        updated_solution =
+          update_in(solution.solution_attrs.metadata, fn meta ->
+            Map.put(meta, :description, description)
+          end)
+
+        {:noreply, assign(socket, :extracted_solution, updated_solution)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("update_solution_difficulty", %{"value" => difficulty}, socket) do
+    case socket.assigns.extracted_solution do
+      %{solution_attrs: %{metadata: _}, tags_attrs: _} = solution ->
+        updated_solution =
+          update_in(solution.solution_attrs.metadata, fn meta ->
+            Map.put(meta, :difficulty, difficulty)
+          end)
+
+        # Also update tags
+        updated_solution =
+          update_in(updated_solution.tags_attrs, fn tags ->
+            tags
+            |> Enum.reject(fn tag -> tag.tag_type == "difficulty" end)
+            |> then(& &1 ++ [%{tag_type: "difficulty", tag_value: difficulty}])
+          end)
+
+        {:noreply, assign(socket, :extracted_solution, updated_solution)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("add_topic", %{"key" => "Enter", "value" => topic}, socket) when topic != "" do
+    topic = String.trim(topic) |> String.downcase()
+
+    case socket.assigns.extracted_solution do
+      %{solution_attrs: %{metadata: %{topics: _}}, tags_attrs: _} = solution when topic != "" ->
+        updated_solution =
+          solution
+          |> update_in([:solution_attrs, :metadata, :topics], fn topics ->
+            if topic in topics do
+              topics
+            else
+              topics ++ [topic]
+            end
+          end)
+          |> update_in([:tags_attrs], fn tags ->
+            if Enum.any?(tags, fn tag -> tag.tag_type == "topic" && tag.tag_value == topic end) do
+              tags
+            else
+              tags ++ [%{tag_type: "topic", tag_value: topic}]
+            end
+          end)
+
+        {:noreply, assign(socket, :extracted_solution, updated_solution)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  def handle_event("add_topic", _params, socket), do: {:noreply, socket}
+
+  @impl true
+  def handle_event("remove_topic", %{"topic" => topic}, socket) do
+    case socket.assigns.extracted_solution do
+      %{solution_attrs: %{metadata: %{topics: _}}, tags_attrs: _} = solution ->
+        updated_solution =
+          solution
+          |> update_in([:solution_attrs, :metadata, :topics], fn topics ->
+            List.delete(topics, topic)
+          end)
+          |> update_in([:tags_attrs], fn tags ->
+            Enum.reject(tags, fn tag -> tag.tag_type == "topic" && tag.tag_value == topic end)
+          end)
+
+        {:noreply, assign(socket, :extracted_solution, updated_solution)}
+
+      _ ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("save_solution", _params, socket) do
+    alias ElixirBear.Solutions
+
+    solution = socket.assigns.extracted_solution
+
+    case Solutions.create_solution_with_associations(
+           solution.solution_attrs,
+           solution.code_blocks_attrs,
+           solution.tags_attrs
+         ) do
+      {:ok, saved_solution} ->
+        socket =
+          socket
+          |> assign(:show_solution_modal, false)
+          |> assign(:extracted_solution, nil)
+          |> put_flash(:info, "Solution saved to Treasure Trove! ID: #{saved_solution.id}")
+
+        {:noreply, socket}
+
+      {:error, reason} ->
+        socket = put_flash(socket, :error, "Failed to save solution: #{inspect(reason)}")
+        {:noreply, socket}
+    end
   end
 
   def handle_event("update_code_block", %{"message_id" => message_id, "new_content" => new_content}, socket) do
@@ -239,7 +523,45 @@ defmodule ElixirBearWeb.ChatLive do
     {:noreply, socket}
   end
 
+  # Handle solution extraction task completion
+  def handle_info({ref, result}, socket) do
+    # Check if this is our solution extraction task
+    if socket.assigns[:solution_extraction_task] && socket.assigns.solution_extraction_task.ref == ref do
+      Process.demonitor(ref, [:flush])
+
+      case result do
+        {:ok, complete_package} ->
+          socket =
+            socket
+            |> assign(:extracted_solution, complete_package)
+            |> assign(:extracting_solution, false)
+            |> assign(:show_solution_modal, true)
+            |> assign(:solution_extraction_task, nil)
+            |> put_flash(:info, "Solution extracted! Review and save below.")
+
+          {:noreply, socket}
+
+        {:error, reason} ->
+          socket =
+            socket
+            |> assign(:extracting_solution, false)
+            |> assign(:solution_extraction_task, nil)
+            |> put_flash(:error, "Failed to extract solution: #{inspect(reason)}")
+
+          {:noreply, socket}
+      end
+    else
+      {:noreply, socket}
+    end
+  end
+
+  def handle_info({:DOWN, _ref, :process, _pid, _reason}, socket) do
+    # Task monitor down message
+    {:noreply, socket}
+  end
+
   defp send_message(socket, user_message) do
+    require Logger
     conversation = socket.assigns.current_conversation
     llm_provider = Chat.get_setting_value("llm_provider") || "openai"
 
@@ -340,14 +662,47 @@ defmodule ElixirBearWeb.ChatLive do
             llm_messages
           end
 
-        # Start conversation worker for background inference
-        case ConversationWorker.start_inference(
-               conversation.id,
-               llm_messages,
-               saved_message.id
-             ) do
+        # Check router for matching solutions first
+        alias ElixirBear.Solutions.Router
+
+        case Router.find_matching_solution(user_message) do
+          {:ok, matched_solution, confidence} ->
+            # Found a matching solution! Show recommendation modal
+            Logger.info("Router: Found matching solution (ID: #{matched_solution.id}, confidence: #{confidence})")
+
+            socket =
+              socket
+              |> assign(:show_router_modal, true)
+              |> assign(:matched_solution, matched_solution)
+              |> assign(:match_confidence, confidence)
+              |> assign(:pending_user_message, user_message)
+              |> assign(:pending_llm_messages, llm_messages)
+              |> assign(:pending_saved_message_id, saved_message.id)
+
+            {:noreply, socket}
+
+          _ ->
+            # No match or router disabled, proceed with normal LLM inference
+            Logger.info("Router: No match found, proceeding with LLM")
+            start_llm_inference(socket, conversation, llm_messages, saved_message.id)
+        end
+    end
+  end
+
+  defp start_llm_inference(socket, conversation, llm_messages, saved_message_id) do
+    # Start conversation worker for background inference
+    require Logger
+    Logger.info("Attempting to start worker for conversation #{conversation.id}")
+
+    case ConversationWorker.start_inference(
+           conversation.id,
+           llm_messages,
+           saved_message_id
+         ) do
           {:ok, _pid} ->
             # Worker started successfully
+            Logger.info("Worker started successfully for conversation #{conversation.id}")
+
             # Track this conversation as processing
             processing_conversations =
               socket.assigns.processing_conversations
@@ -359,14 +714,17 @@ defmodule ElixirBearWeb.ChatLive do
 
           {:error, :already_running} ->
             # A worker is already processing this conversation
+            Logger.warning("Worker already running for conversation #{conversation.id}")
+
             {:noreply,
              put_flash(socket, :info, "A response is already being generated for this conversation")}
 
           {:error, reason} ->
             # Failed to start worker
+            Logger.error("Failed to start worker: #{inspect(reason)}")
+
             {:noreply, put_flash(socket, :error, "Failed to start inference: #{inspect(reason)}")}
         end
-    end
   end
 
   defp prepare_message_content(message) do
@@ -554,8 +912,30 @@ defmodule ElixirBearWeb.ChatLive do
 
         <div class="p-4 border-t border-base-100">
           <.link
-            navigate={~p"/settings"}
+            navigate={~p"/solutions"}
             class="flex items-center gap-2 px-4 py-2 hover:bg-base-100 rounded-lg transition-colors"
+          >
+            <svg
+              class="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                stroke-width="2"
+                d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"
+              >
+              </path>
+            </svg>
+            Treasure Trove
+          </.link>
+
+          <.link
+            navigate={~p"/settings"}
+            class="flex items-center gap-2 px-4 py-2 hover:bg-base-100 rounded-lg transition-colors mt-2"
           >
             <svg
               class="w-5 h-5"
@@ -621,7 +1001,7 @@ defmodule ElixirBearWeb.ChatLive do
                   </div>
 
                   <!-- Show attachments if present -->
-                  <%= if Map.has_key?(message, :attachments) && length(message.attachments) > 0 do %>
+                  <%= if Map.has_key?(message, :attachments) && is_list(message.attachments) && length(message.attachments) > 0 do %>
                     <div class="mb-2 flex flex-wrap gap-2">
                       <%= for attachment <- message.attachments do %>
                         <%= cond do %>
@@ -666,6 +1046,23 @@ defmodule ElixirBearWeb.ChatLive do
                   <div class="prose prose-sm max-w-none message-content">
                     {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
                   </div>
+
+                  <!-- Save as Solution Button (only for assistant messages with code) -->
+                  <%= if message.role == "assistant" && String.contains?(message.content, "```") do %>
+                    <div class="mt-3 pt-3 border-t border-base-300">
+                      <button
+                        phx-click="save_as_solution"
+                        phx-value-message-id={message.id}
+                        class="btn btn-sm btn-outline btn-primary gap-2"
+                        title="Save this solution to Treasure Trove"
+                      >
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                        </svg>
+                        Save to Treasure Trove
+                      </button>
+                    </div>
+                  <% end %>
                 </div>
               </div>
             <% end %>
@@ -779,6 +1176,271 @@ defmodule ElixirBearWeb.ChatLive do
         <% end %>
       </div>
     </div>
+
+    <!-- Solution Review Modal -->
+    <%= if @show_solution_modal && @extracted_solution do %>
+      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" phx-click="close_solution_modal">
+        <div class="bg-base-100 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" phx-click="stop_propagation">
+          <div class="sticky top-0 bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between">
+            <h2 class="text-2xl font-bold text-base-content flex items-center gap-2">
+              <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+              </svg>
+              Review Solution
+            </h2>
+            <button phx-click="close_solution_modal" class="btn btn-sm btn-circle btn-ghost">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+
+          <div class="p-6 space-y-6" phx-click="stop_propagation">
+            <!-- Title -->
+            <div>
+              <label class="block text-sm font-medium text-base-content mb-2">Title</label>
+              <input
+                type="text"
+                value={@extracted_solution.solution_attrs.title}
+                phx-blur="update_solution_title"
+                class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Enter a descriptive title..."
+              />
+            </div>
+
+            <!-- Description -->
+            <div>
+              <label class="block text-sm font-medium text-base-content mb-2">Description</label>
+              <textarea
+                rows="3"
+                phx-blur="update_solution_description"
+                class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Brief description of what this solution teaches..."
+              ><%= Map.get(@extracted_solution.solution_attrs.metadata, :description, "") %></textarea>
+            </div>
+
+            <!-- Topics -->
+            <div>
+              <label class="block text-sm font-medium text-base-content mb-2">Topics</label>
+              <div class="flex flex-wrap gap-2 mb-2">
+                <%= for topic <- Map.get(@extracted_solution.solution_attrs.metadata, :topics, []) do %>
+                  <span class="badge badge-primary gap-2">
+                    <%= topic %>
+                    <button phx-click="remove_topic" phx-value-topic={topic} class="hover:text-error">
+                      <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </span>
+                <% end %>
+              </div>
+              <div class="flex gap-2">
+                <input
+                  type="text"
+                  id="new-topic-input"
+                  phx-key="Enter"
+                  phx-keydown="add_topic"
+                  class="flex-1 px-3 py-2 text-sm bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                  placeholder="Add a topic and press Enter..."
+                />
+              </div>
+            </div>
+
+            <!-- Difficulty -->
+            <div>
+              <label class="block text-sm font-medium text-base-content mb-2">Difficulty</label>
+              <select
+                phx-change="update_solution_difficulty"
+                class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              >
+                <%= for diff <- ["beginner", "intermediate", "advanced"] do %>
+                  <option value={diff} selected={diff == Map.get(@extracted_solution.solution_attrs.metadata, :difficulty)}><%= String.capitalize(diff) %></option>
+                <% end %>
+              </select>
+            </div>
+
+            <!-- Code Blocks Preview -->
+            <div>
+              <label class="block text-sm font-medium text-base-content mb-2">
+                Code Blocks (<%= length(@extracted_solution.code_blocks_attrs) %>)
+              </label>
+              <div class="space-y-3">
+                <%= for {block, idx} <- Enum.with_index(@extracted_solution.code_blocks_attrs) do %>
+                  <div class="bg-base-200 rounded-lg p-4 border border-base-300">
+                    <div class="flex items-center justify-between mb-2">
+                      <span class="text-xs font-medium text-base-content/70">
+                        Block <%= idx + 1 %> <%= if block.language, do: "• #{block.language}", else: "" %>
+                      </span>
+                    </div>
+                    <pre class="text-xs bg-base-300 p-3 rounded overflow-x-auto"><code><%= block.code %></code></pre>
+                  </div>
+                <% end %>
+              </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex gap-3 pt-4 border-t border-base-300">
+              <button
+                phx-click="save_solution"
+                class="btn btn-primary flex-1"
+              >
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                </svg>
+                Save to Treasure Trove
+              </button>
+              <button
+                phx-click="close_solution_modal"
+                class="btn btn-ghost"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    <% end %>
+
+    <!-- Router Recommendation Modal -->
+    <%= if @show_router_modal && @matched_solution do %>
+      <div class="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-base-100 rounded-lg shadow-2xl max-w-3xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+          <!-- Header -->
+          <div class="bg-primary px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <svg class="w-8 h-8 text-primary-content" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                >
+                </path>
+              </svg>
+              <div>
+                <h2 class="text-xl font-bold text-primary-content">Solution Found in Treasure Trove!</h2>
+                <p class="text-sm text-primary-content/80">
+                  Match confidence: <%= Float.round(@match_confidence * 100, 1) %>%
+                </p>
+              </div>
+            </div>
+            <button phx-click="close_router_modal" class="btn btn-sm btn-circle btn-ghost text-primary-content">
+              ✕
+            </button>
+          </div>
+
+          <!-- Content -->
+          <div class="flex-1 overflow-y-auto px-6 py-6">
+            <div class="alert alert-info mb-6">
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+                class="stroke-current shrink-0 w-6 h-6"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                >
+                </path>
+              </svg>
+              <div>
+                <h3 class="font-bold">I found a similar solution you saved before!</h3>
+                <p class="text-sm">
+                  You can use this existing solution or ask me to generate a fresh response.
+                </p>
+              </div>
+            </div>
+
+            <!-- Solution Details -->
+            <div class="space-y-4">
+              <div>
+                <h3 class="text-lg font-bold text-base-content mb-2">
+                  <%= @matched_solution.title || "Saved Solution" %>
+                </h3>
+
+                <!-- Tags -->
+                <div class="flex flex-wrap gap-2 mb-4">
+                  <%= for tag <- Enum.filter(@matched_solution.tags, fn t -> t.tag_type == "topic" end) do %>
+                    <span class="badge badge-primary"><%= tag.tag_value %></span>
+                  <% end %>
+
+                  <%= for tag <- Enum.filter(@matched_solution.tags, fn t -> t.tag_type == "difficulty" end) do %>
+                    <span class={
+                      "badge " <>
+                        case tag.tag_value do
+                          "beginner" -> "badge-success"
+                          "intermediate" -> "badge-warning"
+                          "advanced" -> "badge-error"
+                          _ -> "badge-neutral"
+                        end
+                    }>
+                      <%= tag.tag_value %>
+                    </span>
+                  <% end %>
+                </div>
+
+                <%= if get_in(@matched_solution.metadata, ["description"]) do %>
+                  <p class="text-base-content/70 mb-4">
+                    <%= get_in(@matched_solution.metadata, ["description"]) %>
+                  </p>
+                <% end %>
+              </div>
+
+              <!-- Original Question -->
+              <div>
+                <h4 class="font-semibold text-base-content mb-2">Original Question:</h4>
+                <div class="bg-base-200 rounded-lg p-3 text-sm">
+                  <%= @matched_solution.user_query %>
+                </div>
+              </div>
+
+              <!-- Preview of Answer -->
+              <div>
+                <h4 class="font-semibold text-base-content mb-2">
+                  Answer Preview (<%= length(@matched_solution.code_blocks) %> code block(s)):
+                </h4>
+                <div class="bg-base-200 rounded-lg p-3 text-sm max-h-48 overflow-y-auto">
+                  <%= String.slice(@matched_solution.answer_content, 0..300) %><%= if String.length(@matched_solution.answer_content) > 300,
+                    do: "...",
+                    else: "" %>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Actions -->
+          <div class="border-t border-base-300 px-6 py-4 flex gap-3 justify-end">
+            <button phx-click="reject_router_solution" class="btn btn-ghost gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z"
+                >
+                </path>
+              </svg>
+              Ask LLM Instead
+            </button>
+            <button phx-click="use_router_solution" class="btn btn-primary gap-2">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 13l4 4L19 7"
+                >
+                </path>
+              </svg>
+              Use This Solution
+            </button>
+          </div>
+        </div>
+      </div>
+    <% end %>
     """
   end
 
