@@ -36,7 +36,8 @@ defmodule ElixirBearWeb.ChatLive do
                    .js .jsx .ts .tsx .css .scss .html .json .xml .yaml .yml .toml
                    .py .rb .java .go .rs .c .cpp .h .hpp .sh .bash),
         max_entries: 10,
-        max_file_size: 20_000_000  # 20MB
+        # 20MB
+        max_file_size: 20_000_000
       )
 
     {:ok, socket}
@@ -46,7 +47,10 @@ defmodule ElixirBearWeb.ChatLive do
   def handle_params(%{"id" => id}, _uri, socket) do
     # Unsubscribe from old conversation if exists
     if socket.assigns[:current_conversation] do
-      Phoenix.PubSub.unsubscribe(ElixirBear.PubSub, "conversation:#{socket.assigns.current_conversation.id}")
+      Phoenix.PubSub.unsubscribe(
+        ElixirBear.PubSub,
+        "conversation:#{socket.assigns.current_conversation.id}"
+      )
     end
 
     conversation = Chat.get_conversation!(id)
@@ -60,7 +64,10 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:current_conversation, conversation)
       |> assign(:messages, messages)
       |> assign(:error, nil)
-      |> assign(:processing_conversations, Map.get(socket.assigns, :processing_conversations, MapSet.new()))
+      |> assign(
+        :processing_conversations,
+        Map.get(socket.assigns, :processing_conversations, MapSet.new())
+      )
 
     {:noreply, socket}
   end
@@ -147,30 +154,32 @@ defmodule ElixirBearWeb.ChatLive do
     messages = socket.assigns.messages
     message_index = Enum.find_index(messages, fn m -> m.id == message_id end)
 
-    user_message = if message_index && message_index > 0 do
-      Enum.at(messages, message_index - 1)
-    else
-      nil
-    end
+    user_message =
+      if message_index && message_index > 0 do
+        Enum.at(messages, message_index - 1)
+      else
+        nil
+      end
 
     if user_message && user_message.role == "user" do
       # Package and extract in a background task
-      task = Task.async(fn ->
-        case Packager.validate_and_package(user_message.id, assistant_message.id) do
-          {:ok, package} ->
-            case LLMExtractor.extract_metadata(package) do
-              {:ok, llm_metadata} ->
-                complete_package = Packager.merge_llm_metadata(package, llm_metadata)
-                {:ok, complete_package}
+      task =
+        Task.async(fn ->
+          case Packager.validate_and_package(user_message.id, assistant_message.id) do
+            {:ok, package} ->
+              case LLMExtractor.extract_metadata(package) do
+                {:ok, llm_metadata} ->
+                  complete_package = Packager.merge_llm_metadata(package, llm_metadata)
+                  {:ok, complete_package}
 
-              {:error, reason} ->
-                {:error, {:llm_extraction_failed, reason}}
-            end
+                {:error, reason} ->
+                  {:error, {:llm_extraction_failed, reason}}
+              end
 
-          {:error, reason} ->
-            {:error, {:packaging_failed, reason}}
-        end
-      end)
+            {:error, reason} ->
+              {:error, {:packaging_failed, reason}}
+          end
+        end)
 
       socket =
         socket
@@ -244,6 +253,20 @@ defmodule ElixirBearWeb.ChatLive do
     messages =
       messages ++
         [%{id: saved_message.id, role: "assistant", content: matched_solution.answer_content}]
+
+    # Update conversation title if it's the first exchange
+    socket =
+      if length(messages) == 2 do
+        title = Chat.generate_conversation_title(conversation.id)
+        {:ok, updated_conversation} = Chat.update_conversation(conversation, %{title: title})
+        conversations = Chat.list_conversations()
+
+        socket
+        |> assign(:current_conversation, updated_conversation)
+        |> assign(:conversations, conversations)
+      else
+        socket
+      end
 
     socket =
       socket
@@ -322,7 +345,7 @@ defmodule ElixirBearWeb.ChatLive do
           update_in(updated_solution.tags_attrs, fn tags ->
             tags
             |> Enum.reject(fn tag -> tag.tag_type == "difficulty" end)
-            |> then(& &1 ++ [%{tag_type: "difficulty", tag_value: difficulty}])
+            |> then(&(&1 ++ [%{tag_type: "difficulty", tag_value: difficulty}]))
           end)
 
         {:noreply, assign(socket, :extracted_solution, updated_solution)}
@@ -410,7 +433,11 @@ defmodule ElixirBearWeb.ChatLive do
     end
   end
 
-  def handle_event("update_code_block", %{"message_id" => message_id, "new_content" => new_content}, socket) do
+  def handle_event(
+        "update_code_block",
+        %{"message_id" => message_id, "new_content" => new_content},
+        socket
+      ) do
     # Get the message from the database
     message = Chat.get_message!(message_id)
 
@@ -526,7 +553,8 @@ defmodule ElixirBearWeb.ChatLive do
   # Handle solution extraction task completion
   def handle_info({ref, result}, socket) do
     # Check if this is our solution extraction task
-    if socket.assigns[:solution_extraction_task] && socket.assigns.solution_extraction_task.ref == ref do
+    if socket.assigns[:solution_extraction_task] &&
+         socket.assigns.solution_extraction_task.ref == ref do
       Process.demonitor(ref, [:flush])
 
       case result do
@@ -587,7 +615,11 @@ defmodule ElixirBearWeb.ChatLive do
           uploaded_files
           |> Enum.filter(fn {file_type, _, _, _, _} -> file_type == "text" end)
           |> Enum.map(fn {_, file_path, original_name, _, _} ->
-            content = File.read!(Path.join(["priv", "static"] ++ String.split(file_path, "/", trim: true)))
+            content =
+              File.read!(
+                Path.join(["priv", "static"] ++ String.split(file_path, "/", trim: true))
+              )
+
             "\n\n--- File: #{original_name} ---\n#{content}\n--- End of #{original_name} ---"
           end)
           |> Enum.join("\n")
@@ -668,7 +700,9 @@ defmodule ElixirBearWeb.ChatLive do
         case Router.find_matching_solution(user_message) do
           {:ok, matched_solution, confidence} ->
             # Found a matching solution! Show recommendation modal
-            Logger.info("Router: Found matching solution (ID: #{matched_solution.id}, confidence: #{confidence})")
+            Logger.info(
+              "Router: Found matching solution (ID: #{matched_solution.id}, confidence: #{confidence})"
+            )
 
             socket =
               socket
@@ -699,32 +733,32 @@ defmodule ElixirBearWeb.ChatLive do
            llm_messages,
            saved_message_id
          ) do
-          {:ok, _pid} ->
-            # Worker started successfully
-            Logger.info("Worker started successfully for conversation #{conversation.id}")
+      {:ok, _pid} ->
+        # Worker started successfully
+        Logger.info("Worker started successfully for conversation #{conversation.id}")
 
-            # Track this conversation as processing
-            processing_conversations =
-              socket.assigns.processing_conversations
-              |> MapSet.put(conversation.id)
+        # Track this conversation as processing
+        processing_conversations =
+          socket.assigns.processing_conversations
+          |> MapSet.put(conversation.id)
 
-            socket = assign(socket, :processing_conversations, processing_conversations)
+        socket = assign(socket, :processing_conversations, processing_conversations)
 
-            {:noreply, socket}
+        {:noreply, socket}
 
-          {:error, :already_running} ->
-            # A worker is already processing this conversation
-            Logger.warning("Worker already running for conversation #{conversation.id}")
+      {:error, :already_running} ->
+        # A worker is already processing this conversation
+        Logger.warning("Worker already running for conversation #{conversation.id}")
 
-            {:noreply,
-             put_flash(socket, :info, "A response is already being generated for this conversation")}
+        {:noreply,
+         put_flash(socket, :info, "A response is already being generated for this conversation")}
 
-          {:error, reason} ->
-            # Failed to start worker
-            Logger.error("Failed to start worker: #{inspect(reason)}")
+      {:error, reason} ->
+        # Failed to start worker
+        Logger.error("Failed to start worker: #{inspect(reason)}")
 
-            {:noreply, put_flash(socket, :error, "Failed to start inference: #{inspect(reason)}")}
-        end
+        {:noreply, put_flash(socket, :error, "Failed to start inference: #{inspect(reason)}")}
+    end
   end
 
   defp prepare_message_content(message) do
@@ -745,7 +779,9 @@ defmodule ElixirBearWeb.ChatLive do
       image_content =
         Enum.map(image_attachments, fn att ->
           # Read image file and encode as base64
-          file_path = Path.join(["priv", "static"] ++ String.split(att.file_path, "/", trim: true))
+          file_path =
+            Path.join(["priv", "static"] ++ String.split(att.file_path, "/", trim: true))
+
           image_data = File.read!(file_path)
           base64_image = Base.encode64(image_data)
 
@@ -786,14 +822,17 @@ defmodule ElixirBearWeb.ChatLive do
 
     # Generate unique filename
     ext = Path.extname(entry.client_name)
-    filename = "#{System.system_time(:second)}_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
+
+    filename =
+      "#{System.system_time(:second)}_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
 
     # Determine subdirectory based on file type
-    subdir = case file_type do
-      "image" -> "images"
-      "audio" -> "audio"
-      "text" -> "text"
-    end
+    subdir =
+      case file_type do
+        "image" -> "images"
+        "audio" -> "audio"
+        "text" -> "text"
+      end
 
     dest = Path.join(["priv", "static", "uploads", "attachments", subdir, filename])
 
@@ -999,8 +1038,8 @@ defmodule ElixirBearWeb.ChatLive do
                   <div class="text-sm font-medium mb-1">
                     {if message.role == "user", do: "You", else: "ElixirBear"}
                   </div>
-
-                  <!-- Show attachments if present -->
+                  
+    <!-- Show attachments if present -->
                   <%= if Map.has_key?(message, :attachments) && is_list(message.attachments) && length(message.attachments) > 0 do %>
                     <div class="mb-2 flex flex-wrap gap-2">
                       <%= for attachment <- message.attachments do %>
@@ -1027,8 +1066,18 @@ defmodule ElixirBearWeb.ChatLive do
                             </div>
                           <% attachment.file_type == "text" -> %>
                             <div class="flex items-center gap-2 bg-base-300 px-3 py-2 rounded-lg text-sm">
-                              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                              <svg
+                                class="w-4 h-4"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path
+                                  stroke-linecap="round"
+                                  stroke-linejoin="round"
+                                  stroke-width="2"
+                                  d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                                />
                               </svg>
                               <a
                                 href={attachment.file_path}
@@ -1046,8 +1095,8 @@ defmodule ElixirBearWeb.ChatLive do
                   <div class="prose prose-sm max-w-none message-content">
                     {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
                   </div>
-
-                  <!-- Save as Solution Button (only for assistant messages with code) -->
+                  
+    <!-- Save as Solution Button (only for assistant messages with code) -->
                   <%= if message.role == "assistant" && String.contains?(message.content, "```") && Map.get(message, :id) do %>
                     <div class="mt-3 pt-3 border-t border-base-300">
                       <button
@@ -1057,7 +1106,12 @@ defmodule ElixirBearWeb.ChatLive do
                         title="Save this solution to Treasure Trove"
                       >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                          />
                         </svg>
                         Save to Treasure Trove
                       </button>
@@ -1087,19 +1141,49 @@ defmodule ElixirBearWeb.ChatLive do
                     <div class="flex items-center gap-2 bg-base-200 px-3 py-2 rounded-lg border border-base-300">
                       <%= cond do %>
                         <% String.starts_with?(entry.client_type, "image/") -> %>
-                          <svg class="w-4 h-4 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <svg
+                            class="w-4 h-4 text-primary"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                            />
                           </svg>
                         <% String.starts_with?(entry.client_type, "audio/") -> %>
-                          <svg class="w-4 h-4 text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3" />
+                          <svg
+                            class="w-4 h-4 text-secondary"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"
+                            />
                           </svg>
                         <% true -> %>
-                          <svg class="w-4 h-4 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          <svg
+                            class="w-4 h-4 text-accent"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              stroke-linecap="round"
+                              stroke-linejoin="round"
+                              stroke-width="2"
+                              d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                            />
                           </svg>
                       <% end %>
-                      <span class="text-sm truncate max-w-[150px]"><%= entry.client_name %></span>
+                      <span class="text-sm truncate max-w-[150px]">{entry.client_name}</span>
                       <button
                         type="button"
                         phx-click="cancel_upload"
@@ -1107,7 +1191,12 @@ defmodule ElixirBearWeb.ChatLive do
                         class="text-error hover:text-error/80"
                       >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M6 18L18 6M6 6l12 12"
+                          />
                         </svg>
                       </button>
                     </div>
@@ -1125,9 +1214,7 @@ defmodule ElixirBearWeb.ChatLive do
               id="message-form"
               class="flex gap-2"
             >
-              <label
-                class="cursor-pointer px-3 py-2 bg-base-200 hover:bg-base-300 text-base-content rounded-lg transition-colors flex items-center justify-center"
-              >
+              <label class="cursor-pointer px-3 py-2 bg-base-200 hover:bg-base-300 text-base-content rounded-lg transition-colors flex items-center justify-center">
                 <.live_file_input upload={@uploads.message_files} class="hidden" />
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
@@ -1159,9 +1246,18 @@ defmodule ElixirBearWeb.ChatLive do
           </div>
         <% else %>
           <!-- Empty State -->
-          <div class="flex-1 flex items-center justify-center p-6">
+          <div
+            class="flex-1 flex items-center justify-center p-6 bg-cover bg-center bg-no-repeat"
+            style={
+              if @selected_background do
+                "background-image: linear-gradient(rgba(0, 0, 0, 0.3), rgba(0, 0, 0, 0.3)), url('#{@selected_background.file_path}');"
+              else
+                ""
+              end
+            }
+          >
             <div class="text-center">
-              <h2 class="text-2xl font-bold text-base-content mb-4">Welcome to ChatGPT Clone</h2>
+              <h2 class="text-2xl font-bold text-base-content mb-4">Welcome to Elixir Bear</h2>
               <p class="text-base-content/70 mb-6">
                 Create a new conversation or select an existing one to get started
               </p>
@@ -1179,18 +1275,34 @@ defmodule ElixirBearWeb.ChatLive do
 
     <!-- Solution Review Modal -->
     <%= if @show_solution_modal && @extracted_solution do %>
-      <div class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" phx-click="close_solution_modal">
-        <div class="bg-base-100 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto" phx-click="stop_propagation">
+      <div
+        class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
+        phx-click="close_solution_modal"
+      >
+        <div
+          class="bg-base-100 rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+          phx-click="stop_propagation"
+        >
           <div class="sticky top-0 bg-base-100 border-b border-base-300 px-6 py-4 flex items-center justify-between">
             <h2 class="text-2xl font-bold text-base-content flex items-center gap-2">
               <svg class="w-6 h-6 text-primary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
+                />
               </svg>
               Review Solution
             </h2>
             <button phx-click="close_solution_modal" class="btn btn-sm btn-circle btn-ghost">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
               </svg>
             </button>
           </div>
@@ -1207,8 +1319,8 @@ defmodule ElixirBearWeb.ChatLive do
                 placeholder="Enter a descriptive title..."
               />
             </div>
-
-            <!-- Description -->
+            
+    <!-- Description -->
             <div>
               <label class="block text-sm font-medium text-base-content mb-2">Description</label>
               <textarea
@@ -1218,17 +1330,22 @@ defmodule ElixirBearWeb.ChatLive do
                 placeholder="Brief description of what this solution teaches..."
               ><%= Map.get(@extracted_solution.solution_attrs.metadata, :description, "") %></textarea>
             </div>
-
-            <!-- Topics -->
+            
+    <!-- Topics -->
             <div>
               <label class="block text-sm font-medium text-base-content mb-2">Topics</label>
               <div class="flex flex-wrap gap-2 mb-2">
                 <%= for topic <- Map.get(@extracted_solution.solution_attrs.metadata, :topics, []) do %>
                   <span class="badge badge-primary gap-2">
-                    <%= topic %>
+                    {topic}
                     <button phx-click="remove_topic" phx-value-topic={topic} class="hover:text-error">
                       <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                        <path
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                          stroke-width="2"
+                          d="M6 18L18 6M6 6l12 12"
+                        />
                       </svg>
                     </button>
                   </span>
@@ -1245,8 +1362,8 @@ defmodule ElixirBearWeb.ChatLive do
                 />
               </div>
             </div>
-
-            <!-- Difficulty -->
+            
+    <!-- Difficulty -->
             <div>
               <label class="block text-sm font-medium text-base-content mb-2">Difficulty</label>
               <select
@@ -1254,22 +1371,29 @@ defmodule ElixirBearWeb.ChatLive do
                 class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 <%= for diff <- ["beginner", "intermediate", "advanced"] do %>
-                  <option value={diff} selected={diff == Map.get(@extracted_solution.solution_attrs.metadata, :difficulty)}><%= String.capitalize(diff) %></option>
+                  <option
+                    value={diff}
+                    selected={
+                      diff == Map.get(@extracted_solution.solution_attrs.metadata, :difficulty)
+                    }
+                  >
+                    {String.capitalize(diff)}
+                  </option>
                 <% end %>
               </select>
             </div>
-
-            <!-- Code Blocks Preview -->
+            
+    <!-- Code Blocks Preview -->
             <div>
               <label class="block text-sm font-medium text-base-content mb-2">
-                Code Blocks (<%= length(@extracted_solution.code_blocks_attrs) %>)
+                Code Blocks ({length(@extracted_solution.code_blocks_attrs)})
               </label>
               <div class="space-y-3">
                 <%= for {block, idx} <- Enum.with_index(@extracted_solution.code_blocks_attrs) do %>
                   <div class="bg-base-200 rounded-lg p-4 border border-base-300">
                     <div class="flex items-center justify-between mb-2">
                       <span class="text-xs font-medium text-base-content/70">
-                        Block <%= idx + 1 %> <%= if block.language, do: "• #{block.language}", else: "" %>
+                        Block {idx + 1} {if block.language, do: "• #{block.language}", else: ""}
                       </span>
                     </div>
                     <pre class="text-xs bg-base-300 p-3 rounded overflow-x-auto"><code><%= block.code %></code></pre>
@@ -1277,15 +1401,20 @@ defmodule ElixirBearWeb.ChatLive do
                 <% end %>
               </div>
             </div>
-
-            <!-- Action Buttons -->
+            
+    <!-- Action Buttons -->
             <div class="flex gap-3 pt-4 border-t border-base-300">
               <button
                 phx-click="save_solution"
                 class="btn btn-primary flex-1"
               >
                 <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M5 13l4 4L19 7"
+                  />
                 </svg>
                 Save to Treasure Trove
               </button>
@@ -1308,7 +1437,12 @@ defmodule ElixirBearWeb.ChatLive do
           <!-- Header -->
           <div class="bg-primary px-6 py-4 flex items-center justify-between">
             <div class="flex items-center gap-3">
-              <svg class="w-8 h-8 text-primary-content" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg
+                class="w-8 h-8 text-primary-content"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
                 <path
                   stroke-linecap="round"
                   stroke-linejoin="round"
@@ -1318,18 +1452,23 @@ defmodule ElixirBearWeb.ChatLive do
                 </path>
               </svg>
               <div>
-                <h2 class="text-xl font-bold text-primary-content">Solution Found in Treasure Trove!</h2>
+                <h2 class="text-xl font-bold text-primary-content">
+                  Solution Found in Treasure Trove!
+                </h2>
                 <p class="text-sm text-primary-content/80">
-                  Match confidence: <%= Float.round(@match_confidence * 100, 1) %>%
+                  Match confidence: {Float.round(@match_confidence * 100, 1)}%
                 </p>
               </div>
             </div>
-            <button phx-click="close_router_modal" class="btn btn-sm btn-circle btn-ghost text-primary-content">
+            <button
+              phx-click="close_router_modal"
+              class="btn btn-sm btn-circle btn-ghost text-primary-content"
+            >
               ✕
             </button>
           </div>
-
-          <!-- Content -->
+          
+    <!-- Content -->
           <div class="flex-1 overflow-y-auto px-6 py-6">
             <div class="alert alert-info mb-6">
               <svg
@@ -1353,18 +1492,18 @@ defmodule ElixirBearWeb.ChatLive do
                 </p>
               </div>
             </div>
-
-            <!-- Solution Details -->
+            
+    <!-- Solution Details -->
             <div class="space-y-4">
               <div>
                 <h3 class="text-lg font-bold text-base-content mb-2">
-                  <%= @matched_solution.title || "Saved Solution" %>
+                  {@matched_solution.title || "Saved Solution"}
                 </h3>
-
-                <!-- Tags -->
+                
+    <!-- Tags -->
                 <div class="flex flex-wrap gap-2 mb-4">
                   <%= for tag <- Enum.filter(@matched_solution.tags, fn t -> t.tag_type == "topic" end) do %>
-                    <span class="badge badge-primary"><%= tag.tag_value %></span>
+                    <span class="badge badge-primary">{tag.tag_value}</span>
                   <% end %>
 
                   <%= for tag <- Enum.filter(@matched_solution.tags, fn t -> t.tag_type == "difficulty" end) do %>
@@ -1377,41 +1516,43 @@ defmodule ElixirBearWeb.ChatLive do
                           _ -> "badge-neutral"
                         end
                     }>
-                      <%= tag.tag_value %>
+                      {tag.tag_value}
                     </span>
                   <% end %>
                 </div>
 
                 <%= if get_in(@matched_solution.metadata, ["description"]) do %>
                   <p class="text-base-content/70 mb-4">
-                    <%= get_in(@matched_solution.metadata, ["description"]) %>
+                    {get_in(@matched_solution.metadata, ["description"])}
                   </p>
                 <% end %>
               </div>
-
-              <!-- Original Question -->
+              
+    <!-- Original Question -->
               <div>
                 <h4 class="font-semibold text-base-content mb-2">Original Question:</h4>
                 <div class="bg-base-200 rounded-lg p-3 text-sm">
-                  <%= @matched_solution.user_query %>
+                  {@matched_solution.user_query}
                 </div>
               </div>
-
-              <!-- Preview of Answer -->
+              
+    <!-- Preview of Answer -->
               <div>
                 <h4 class="font-semibold text-base-content mb-2">
-                  Answer Preview (<%= length(@matched_solution.code_blocks) %> code block(s)):
+                  Answer Preview ({length(@matched_solution.code_blocks)} code block(s)):
                 </h4>
                 <div class="bg-base-200 rounded-lg p-3 text-sm max-h-48 overflow-y-auto">
-                  <%= String.slice(@matched_solution.answer_content, 0..300) %><%= if String.length(@matched_solution.answer_content) > 300,
-                    do: "...",
-                    else: "" %>
+                  {String.slice(@matched_solution.answer_content, 0..300)}{if String.length(
+                                                                                @matched_solution.answer_content
+                                                                              ) > 300,
+                                                                              do: "...",
+                                                                              else: ""}
                 </div>
               </div>
             </div>
           </div>
-
-          <!-- Actions -->
+          
+    <!-- Actions -->
           <div class="border-t border-base-300 px-6 py-4 flex gap-3 justify-end">
             <button phx-click="reject_router_solution" class="btn btn-ghost gap-2">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
