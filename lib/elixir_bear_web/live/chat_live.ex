@@ -29,6 +29,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:pending_user_message, nil)
       |> assign(:pending_llm_messages, nil)
       |> assign(:pending_saved_message_id, nil)
+      |> assign(:sidebar_collapsed, true)
       |> allow_upload(:message_files,
         accept: ~w(.jpg .jpeg .png .gif .webp
                    .mp3 .mpga .m4a .wav
@@ -144,6 +145,11 @@ defmodule ElixirBearWeb.ChatLive do
   end
 
   @impl true
+  def handle_event("toggle_sidebar", _params, socket) do
+    {:noreply, assign(socket, :sidebar_collapsed, !socket.assigns.sidebar_collapsed)}
+  end
+
+  @impl true
   def handle_event("save_as_solution", %{"message-id" => message_id}, socket) do
     alias ElixirBear.Solutions.{Packager, LLMExtractor}
 
@@ -185,7 +191,7 @@ defmodule ElixirBearWeb.ChatLive do
         socket
         |> assign(:solution_extraction_task, task)
         |> assign(:extracting_solution, true)
-        |> put_flash(:info, "Extracting solution metadata...")
+        |> put_flash(:info, "Extracting potion metadata...")
 
       {:noreply, socket}
     else
@@ -278,7 +284,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:pending_user_message, nil)
       |> assign(:pending_llm_messages, nil)
       |> assign(:pending_saved_message_id, nil)
-      |> put_flash(:info, "Used solution from Treasure Trove!")
+      |> put_flash(:info, "Used potion from Potion Shelf!")
 
     {:noreply, socket}
   end
@@ -423,12 +429,12 @@ defmodule ElixirBearWeb.ChatLive do
           socket
           |> assign(:show_solution_modal, false)
           |> assign(:extracted_solution, nil)
-          |> put_flash(:info, "Solution saved to Treasure Trove! ID: #{saved_solution.id}")
+          |> put_flash(:info, "Potion saved to Potion Shelf! ID: #{saved_solution.id}")
 
         {:noreply, socket}
 
       {:error, reason} ->
-        socket = put_flash(socket, :error, "Failed to save solution: #{inspect(reason)}")
+        socket = put_flash(socket, :error, "Failed to save potion: #{inspect(reason)}")
         {:noreply, socket}
     end
   end
@@ -565,7 +571,7 @@ defmodule ElixirBearWeb.ChatLive do
             |> assign(:extracting_solution, false)
             |> assign(:show_solution_modal, true)
             |> assign(:solution_extraction_task, nil)
-            |> put_flash(:info, "Solution extracted! Review and save below.")
+            |> put_flash(:info, "Potion extracted! Review and save below.")
 
           {:noreply, socket}
 
@@ -574,7 +580,7 @@ defmodule ElixirBearWeb.ChatLive do
             socket
             |> assign(:extracting_solution, false)
             |> assign(:solution_extraction_task, nil)
-            |> put_flash(:error, "Failed to extract solution: #{inspect(reason)}")
+            |> put_flash(:error, "Failed to extract potion: #{inspect(reason)}")
 
           {:noreply, socket}
       end
@@ -874,8 +880,35 @@ defmodule ElixirBearWeb.ChatLive do
   def render(assigns) do
     ~H"""
     <div class="flex h-screen bg-base-200">
+      <!-- Sidebar Toggle Button -->
+      <button
+        phx-click="toggle_sidebar"
+        class="absolute top-4 left-4 z-50 p-2 bg-base-300 hover:bg-base-100 text-base-content rounded-lg shadow-lg transition-colors"
+        title={if @sidebar_collapsed, do: "Show sidebar", else: "Hide sidebar"}
+      >
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <%= if @sidebar_collapsed do %>
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M4 6h16M4 12h16M4 18h16"
+            />
+          <% else %>
+            <path
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"
+            />
+          <% end %>
+        </svg>
+      </button>
       <!-- Sidebar -->
-      <div class="w-64 bg-base-300 text-base-content flex flex-col">
+      <div class={[
+        "w-64 bg-base-300 text-base-content flex flex-col transition-all duration-300",
+        @sidebar_collapsed && "-ml-64"
+      ]}>
         <div class="p-4">
           <button
             phx-click="new_conversation"
@@ -969,7 +1002,7 @@ defmodule ElixirBearWeb.ChatLive do
               >
               </path>
             </svg>
-            Treasure Trove
+            Potion Shelf
           </.link>
 
           <.link
@@ -1096,14 +1129,14 @@ defmodule ElixirBearWeb.ChatLive do
                     {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
                   </div>
                   
-    <!-- Save as Solution Button (only for assistant messages with code) -->
+    <!-- Save as Potion Button (only for assistant messages with code) -->
                   <%= if message.role == "assistant" && String.contains?(message.content, "```") && Map.get(message, :id) do %>
                     <div class="mt-3 pt-3 border-t border-base-300">
                       <button
                         phx-click="save_as_solution"
                         phx-value-message-id={Map.get(message, :id)}
                         class="btn btn-sm btn-outline btn-primary gap-2"
-                        title="Save this solution to Treasure Trove"
+                        title="Save this potion to Potion Shelf"
                       >
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path
@@ -1113,7 +1146,7 @@ defmodule ElixirBearWeb.ChatLive do
                             d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
                           />
                         </svg>
-                        Save to Treasure Trove
+                        Save to Potion Shelf
                       </button>
                     </div>
                   <% end %>
@@ -1273,7 +1306,7 @@ defmodule ElixirBearWeb.ChatLive do
       </div>
     </div>
 
-    <!-- Solution Review Modal -->
+    <!-- Potion Review Modal -->
     <%= if @show_solution_modal && @extracted_solution do %>
       <div
         class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
@@ -1293,7 +1326,7 @@ defmodule ElixirBearWeb.ChatLive do
                   d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"
                 />
               </svg>
-              Review Solution
+              Review Potion
             </h2>
             <button phx-click="close_solution_modal" class="btn btn-sm btn-circle btn-ghost">
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1327,7 +1360,7 @@ defmodule ElixirBearWeb.ChatLive do
                 rows="3"
                 phx-blur="update_solution_description"
                 class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="Brief description of what this solution teaches..."
+                placeholder="Brief description of what this potion teaches..."
               ><%= Map.get(@extracted_solution.solution_attrs.metadata, :description, "") %></textarea>
             </div>
             
@@ -1416,7 +1449,7 @@ defmodule ElixirBearWeb.ChatLive do
                     d="M5 13l4 4L19 7"
                   />
                 </svg>
-                Save to Treasure Trove
+                Save to Potion Shelf
               </button>
               <button
                 phx-click="close_solution_modal"
@@ -1453,7 +1486,7 @@ defmodule ElixirBearWeb.ChatLive do
               </svg>
               <div>
                 <h2 class="text-xl font-bold text-primary-content">
-                  Solution Found in Treasure Trove!
+                  Potion Found in Potion Shelf!
                 </h2>
                 <p class="text-sm text-primary-content/80">
                   Match confidence: {Float.round(@match_confidence * 100, 1)}%
@@ -1486,9 +1519,9 @@ defmodule ElixirBearWeb.ChatLive do
                 </path>
               </svg>
               <div>
-                <h3 class="font-bold">I found a similar solution you saved before!</h3>
+                <h3 class="font-bold">I found a similar potion you saved before!</h3>
                 <p class="text-sm">
-                  You can use this existing solution or ask me to generate a fresh response.
+                  You can use this existing potion or ask me to generate a fresh response.
                 </p>
               </div>
             </div>
@@ -1497,7 +1530,7 @@ defmodule ElixirBearWeb.ChatLive do
             <div class="space-y-4">
               <div>
                 <h3 class="text-lg font-bold text-base-content mb-2">
-                  {@matched_solution.title || "Saved Solution"}
+                  {@matched_solution.title || "Saved Potion"}
                 </h3>
                 
     <!-- Tags -->
@@ -1576,7 +1609,7 @@ defmodule ElixirBearWeb.ChatLive do
                 >
                 </path>
               </svg>
-              Use This Solution
+              Use This Potion
             </button>
           </div>
         </div>
