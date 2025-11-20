@@ -303,6 +303,33 @@ const Hooks = {
         button.classList.remove('success')
       }, 2000)
     }
+  },
+  ThresholdSlider: {
+    mounted() {
+      this.setupSlider()
+    },
+    updated() {
+      this.setupSlider()
+    },
+    setupSlider() {
+      const slider = this.el
+      const displayId = slider.getAttribute('data-display-id')
+      const display = displayId ? document.getElementById(displayId) : null
+
+      // Update display value as slider moves (immediate feedback)
+      slider.addEventListener('input', (e) => {
+        const value = parseFloat(e.target.value).toFixed(2)
+        if (display) {
+          display.textContent = value
+        }
+      })
+
+      // Send to server when user releases slider or stops dragging
+      slider.addEventListener('change', (e) => {
+        const value = e.target.value
+        this.pushEventTo(slider, 'update_solution_router_threshold', { value: value })
+      })
+    }
   }
 }
 

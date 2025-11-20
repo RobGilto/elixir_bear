@@ -22,6 +22,10 @@ defmodule ElixirBearWeb.SettingsLive do
     enable_solution_router = Chat.get_setting_value("enable_solution_router") || "true"
     solution_router_threshold = Chat.get_setting_value("solution_router_threshold") || "0.75"
 
+    # Orchestrator settings
+    enable_prompt_orchestrator = Chat.get_setting_value("enable_prompt_orchestrator") || "false"
+    orchestrator_prompts_json = Chat.get_setting_value("orchestrator_prompts") || ~s({})
+
     # Check Ollama connection status and fetch models
     {ollama_status, ollama_models} =
       case Ollama.check_connection(url: ollama_url) do
@@ -72,6 +76,9 @@ defmodule ElixirBearWeb.SettingsLive do
       |> assign(:solution_extraction_openai_model, solution_extraction_openai_model)
       |> assign(:enable_solution_router, enable_solution_router)
       |> assign(:solution_router_threshold, solution_router_threshold)
+      |> assign(:enable_prompt_orchestrator, enable_prompt_orchestrator)
+      |> assign(:orchestrator_prompts_json, orchestrator_prompts_json)
+      |> assign(:orchestrator_json_error, nil)
       |> assign(:background_images, background_images)
       |> assign(:selected_background, selected_background)
       |> allow_upload(:background_image,
@@ -320,6 +327,119 @@ defmodule ElixirBearWeb.SettingsLive do
       |> put_flash(:info, "Solution router threshold updated to #{threshold_clamped}")
 
     {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_orchestrator", _params, socket) do
+    current_value = socket.assigns.enable_prompt_orchestrator
+    new_value = if current_value == "true", do: "false", else: "true"
+
+    Chat.update_setting("enable_prompt_orchestrator", new_value)
+
+    socket =
+      socket
+      |> assign(:enable_prompt_orchestrator, new_value)
+      |> put_flash(:info, "Prompt orchestrator #{if new_value == "true", do: "enabled", else: "disabled"}")
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("update_orchestrator_prompts", %{"value" => json_string}, socket) do
+    # Validate JSON before saving
+    case Jason.decode(json_string) do
+      {:ok, prompts} when is_map(prompts) ->
+        Chat.update_setting("orchestrator_prompts", json_string)
+
+        # Parse the categories for display
+        categories = Chat.list_orchestrator_categories()
+
+        socket =
+          socket
+          |> assign(:orchestrator_prompts_json, json_string)
+          |> assign(:orchestrator_json_error, nil)
+          |> put_flash(:info, "System prompts updated (#{length(categories)} categories)")
+
+        {:noreply, socket}
+
+      {:error, %Jason.DecodeError{} = error} ->
+        socket =
+          socket
+          |> assign(:orchestrator_prompts_json, json_string)
+          |> assign(:orchestrator_json_error, "Invalid JSON: #{Exception.message(error)}")
+          |> put_flash(:error, "Invalid JSON format. Tip: Use minified (single-line) JSON to avoid formatting issues.")
+
+        {:noreply, socket}
+
+      _ ->
+        socket =
+          socket
+          |> assign(:orchestrator_prompts_json, json_string)
+          |> assign(:orchestrator_json_error, "JSON must be an object/map")
+          |> put_flash(:error, "JSON must be an object/map")
+
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("beautify_orchestrator_json", _params, socket) do
+    current_json = socket.assigns.orchestrator_prompts_json
+
+    case Jason.decode(current_json) do
+      {:ok, prompts} when is_map(prompts) ->
+        # Format with pretty printing
+        beautified = Jason.encode!(prompts, pretty: true)
+
+        socket =
+          socket
+          |> assign(:orchestrator_prompts_json, beautified)
+          |> assign(:orchestrator_json_error, nil)
+          |> put_flash(:info, "JSON beautified successfully")
+
+        {:noreply, socket}
+
+      {:error, %Jason.DecodeError{} = error} ->
+        socket =
+          socket
+          |> assign(:orchestrator_json_error, "Cannot beautify invalid JSON: #{Exception.message(error)}")
+          |> put_flash(:error, "Invalid JSON - fix errors first")
+
+        {:noreply, socket}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "JSON must be an object/map")}
+    end
+  end
+
+  @impl true
+  def handle_event("minify_orchestrator_json", _params, socket) do
+    current_json = socket.assigns.orchestrator_prompts_json
+
+    case Jason.decode(current_json) do
+      {:ok, prompts} when is_map(prompts) ->
+        # Format as single line
+        minified = Jason.encode!(prompts)
+
+        socket =
+          socket
+          |> assign(:orchestrator_prompts_json, minified)
+          |> assign(:orchestrator_json_error, nil)
+          |> put_flash(:info, "JSON minified successfully")
+
+        {:noreply, socket}
+
+      {:error, %Jason.DecodeError{} = error} ->
+        socket =
+          socket
+          |> assign(:orchestrator_json_error, "Cannot minify invalid JSON: #{Exception.message(error)}")
+          |> put_flash(:error, "Invalid JSON - fix errors first")
+
+        {:noreply, socket}
+
+      _ ->
+        {:noreply, put_flash(socket, :error, "JSON must be an object/map")}
+    end
   end
 
   @impl true
@@ -601,8 +721,120 @@ defmodule ElixirBearWeb.SettingsLive do
             placeholder="You are a helpful assistant..."
           ><%= @system_prompt %></textarea>
           <p class="mt-1 text-sm text-base-content/70">
-            Optional system prompt for all conversations (can be overridden per conversation)
+            <%= if @enable_prompt_orchestrator == "true" do %>
+              <span class="font-medium text-info">⚡ Orchestrator Enabled:</span> This prompt is used as the <strong>default fallback</strong> when no specific category matches.
+            <% else %>
+              Optional system prompt for all conversations (can be overridden per conversation)
+            <% end %>
           </p>
+        </div>
+        <!-- Prompt Orchestrator -->
+        <div class="border border-base-300 rounded-lg p-4 bg-base-100">
+          <div class="flex items-start justify-between mb-4">
+            <div>
+              <h3 class="text-lg font-medium text-base-content">Prompt Orchestrator</h3>
+              <p class="text-sm text-base-content/70 mt-1">
+                Automatically select specialized system prompts based on the user's message content
+              </p>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={@enable_prompt_orchestrator == "true"}
+                phx-click="toggle_orchestrator"
+                class="toggle toggle-primary"
+              />
+              <span class="text-sm font-medium"><%= if @enable_prompt_orchestrator == "true", do: "Enabled", else: "Disabled" %></span>
+            </label>
+          </div>
+
+          <div class="space-y-4">
+            <div>
+              <label for="orchestrator_prompts" class="block text-sm font-medium text-base-content mb-2">
+                System Prompts (JSON)
+              </label>
+              <textarea
+                id="orchestrator_prompts"
+                rows="12"
+                phx-blur="update_orchestrator_prompts"
+                class={"w-full px-4 py-2 bg-base-200 text-base-content border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm #{if @orchestrator_json_error, do: "border-error", else: "border-base-300"}"}
+                placeholder={~s({\n  "python": "You are a Python expert...",\n  "python/django": "You are a Django framework expert...",\n  "elixir": "You are an Elixir expert...",\n  "elixir/phoenix": "You are a Phoenix framework expert..."\n})}
+              ><%= @orchestrator_prompts_json %></textarea>
+
+              <!-- Format Buttons -->
+              <div class="flex gap-2 mt-2">
+                <button
+                  type="button"
+                  phx-click="beautify_orchestrator_json"
+                  class="btn btn-sm btn-outline gap-2"
+                  title="Format JSON with indentation for readability"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                  </svg>
+                  Beautify JSON
+                </button>
+                <button
+                  type="button"
+                  phx-click="minify_orchestrator_json"
+                  class="btn btn-sm btn-outline gap-2"
+                  title="Compress JSON to single line (recommended to avoid formatting errors)"
+                >
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                  </svg>
+                  Minify JSON
+                </button>
+                <div class="flex-1"></div>
+                <div class="text-xs text-base-content/50 self-center">
+                  {String.length(@orchestrator_prompts_json)} characters
+                </div>
+              </div>
+
+              <%= if @orchestrator_json_error do %>
+                <p class="mt-1 text-sm text-error">
+                  <%= @orchestrator_json_error %>
+                </p>
+              <% else %>
+                <p class="mt-1 text-sm text-base-content/70">
+                  Define categorized prompts using JSON. Use format: <code class="bg-base-300 px-1 rounded">"category": "prompt text"</code> or <code class="bg-base-300 px-1 rounded">"language/framework": "prompt text"</code>
+                  <br/>
+                  <span class="text-info font-medium">Note:</span> The "System Prompt" field above serves as the default fallback.
+                </p>
+              <% end %>
+            </div>
+
+            <div class="bg-base-200 rounded-lg p-3">
+              <div class="text-sm font-medium text-base-content mb-2">Available Categories:</div>
+              <%= if @enable_prompt_orchestrator == "true" do %>
+                <% categories = ElixirBear.Chat.list_orchestrator_categories() %>
+                <div class="flex flex-wrap gap-2">
+                  <span class="badge badge-sm badge-outline">default (System Prompt)</span>
+                  <%= if length(categories) > 0 do %>
+                    <%= for category <- categories do %>
+                      <span class="badge badge-sm badge-primary"><%= category %></span>
+                    <% end %>
+                  <% end %>
+                </div>
+              <% else %>
+                <p class="text-sm text-base-content/70 italic">Enable orchestrator to see categories</p>
+              <% end %>
+            </div>
+
+            <div class="bg-info/10 border border-info/20 rounded-lg p-3">
+              <div class="flex items-start gap-2">
+                <svg class="w-4 h-4 text-info mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                </svg>
+                <div class="text-sm text-info">
+                  <strong>How it works:</strong> The orchestrator analyzes each user message and selects the most appropriate system prompt.
+                  Supports hierarchical categories (e.g., <code class="bg-base-300 px-1 rounded">python/django</code> → <code class="bg-base-300 px-1 rounded">python</code> → <code class="bg-base-300 px-1 rounded">default</code>).
+                  The <strong>System Prompt field above</strong> is used as the default when no category matches.
+                  Uses the same LLM provider as Solution Extraction.
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Vision Model Settings -->
@@ -760,7 +992,7 @@ defmodule ElixirBearWeb.SettingsLive do
             <%= if @enable_solution_router == "true" do %>
               <div>
                 <label for="solution_router_threshold" class="block text-sm font-medium text-base-content mb-2">
-                  Similarity Threshold: <%= @solution_router_threshold %>
+                  Similarity Threshold: <span id="threshold-display"><%= Float.parse(@solution_router_threshold) |> elem(0) |> Float.round(2) %></span>
                 </label>
                 <input
                   type="range"
@@ -770,7 +1002,8 @@ defmodule ElixirBearWeb.SettingsLive do
                   max="0.95"
                   step="0.05"
                   value={@solution_router_threshold}
-                  phx-change="update_solution_router_threshold"
+                  phx-hook="ThresholdSlider"
+                  data-display-id="threshold-display"
                   class="range range-primary"
                 />
                 <div class="flex justify-between text-xs text-base-content/70 mt-1">

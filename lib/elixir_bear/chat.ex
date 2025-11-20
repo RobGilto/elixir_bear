@@ -45,6 +45,68 @@ defmodule ElixirBear.Chat do
     end
   end
 
+  # Orchestrator
+
+  @doc """
+  Gets orchestrator prompts from settings and parses JSON.
+  Returns a map of category => prompt, or empty map if parsing fails.
+  """
+  def get_orchestrator_prompts do
+    case get_setting_value("orchestrator_prompts") do
+      nil -> %{}
+      json_string ->
+        case Jason.decode(json_string) do
+          {:ok, prompts} when is_map(prompts) -> prompts
+          _ -> %{}
+        end
+    end
+  end
+
+  @doc """
+  Gets the prompt for a specific category with hierarchical fallback.
+
+  Examples:
+    - Category "python/django" → tries "python/django", then "python", then nil (caller uses default)
+    - Category "python" → tries "python", then nil (caller uses default)
+    - Category nil → returns nil (caller uses default system prompt)
+  """
+  def get_prompt_for_category(category) do
+    prompts = get_orchestrator_prompts()
+
+    cond do
+      # Try exact match first
+      is_binary(category) && Map.has_key?(prompts, category) ->
+        Map.get(prompts, category)
+
+      # Try parent category (e.g., "python/django" → "python")
+      is_binary(category) && String.contains?(category, "/") ->
+        parent = category |> String.split("/") |> List.first()
+        Map.get(prompts, parent, nil)
+
+      # No match - return nil so caller can use default system prompt
+      true ->
+        nil
+    end
+  end
+
+  @doc """
+  Lists all available orchestrator categories from the JSON configuration.
+  Returns a list of category strings.
+  """
+  def list_orchestrator_categories do
+    get_orchestrator_prompts()
+    |> Map.keys()
+    |> Enum.reject(&(&1 == "default"))
+    |> Enum.sort()
+  end
+
+  @doc """
+  Checks if the orchestrator is enabled.
+  """
+  def orchestrator_enabled? do
+    get_setting_value("enable_prompt_orchestrator") == "true"
+  end
+
   # Conversations
 
   @doc """

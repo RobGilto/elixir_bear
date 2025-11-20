@@ -295,6 +295,7 @@ defmodule ElixirBearWeb.ChatLive do
     conversation = socket.assigns.current_conversation
     llm_messages = socket.assigns.pending_llm_messages
     saved_message_id = socket.assigns.pending_saved_message_id
+    selected_category = socket.assigns[:selected_category]
 
     socket =
       socket
@@ -305,7 +306,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:pending_llm_messages, nil)
       |> assign(:pending_saved_message_id, nil)
 
-    start_llm_inference(socket, conversation, llm_messages, saved_message_id)
+    start_llm_inference(socket, conversation, llm_messages, saved_message_id, selected_category)
   end
 
   @impl true
@@ -670,15 +671,37 @@ defmodule ElixirBearWeb.ChatLive do
         # Add temporary assistant message
         messages = messages ++ [%{role: "assistant", content: ""}]
 
+        # Prepare messages for LLM (exclude the temporary empty assistant message)
+        # Use orchestrator to select system prompt if enabled
+        alias ElixirBear.PromptOrchestrator.Analyzer
+
+        # Get the default system prompt (used as fallback)
+        default_system_prompt = Chat.get_system_prompt(conversation)
+
+        {system_prompt, selected_category} =
+          case Analyzer.analyze_and_select_prompt(user_message) do
+            {:ok, category, confidence} ->
+              Logger.info("Orchestrator: Selected category '#{category}' with confidence #{confidence}")
+              prompt = Chat.get_prompt_for_category(category)
+              # If prompt is nil or empty, use default system prompt
+              final_prompt = if prompt && prompt != "", do: prompt, else: default_system_prompt
+              {final_prompt, category}
+
+            {:error, :orchestrator_disabled} ->
+              {default_system_prompt, nil}
+
+            {:error, reason} ->
+              Logger.debug("Orchestrator: #{inspect(reason)}, using default system prompt")
+              {default_system_prompt, nil}
+          end
+
         socket =
           socket
           |> assign(:messages, messages)
           |> assign(:input, "")
           |> assign(:loading, true)
           |> assign(:error, nil)
-
-        # Prepare messages for LLM (exclude the temporary empty assistant message)
-        system_prompt = Chat.get_system_prompt(conversation)
+          |> assign(:selected_category, selected_category)
 
         # Filter out empty messages (like the temporary assistant message we just added)
         filtered_messages =
@@ -724,20 +747,24 @@ defmodule ElixirBearWeb.ChatLive do
           _ ->
             # No match or router disabled, proceed with normal LLM inference
             Logger.info("Router: No match found, proceeding with LLM")
-            start_llm_inference(socket, conversation, llm_messages, saved_message.id)
+            start_llm_inference(socket, conversation, llm_messages, saved_message.id, selected_category)
         end
     end
   end
 
-  defp start_llm_inference(socket, conversation, llm_messages, saved_message_id) do
+  defp start_llm_inference(socket, conversation, llm_messages, saved_message_id, selected_category \\ nil) do
     # Start conversation worker for background inference
     require Logger
     Logger.info("Attempting to start worker for conversation #{conversation.id}")
 
+    # Prepare metadata for assistant message
+    metadata = if selected_category, do: %{"orchestrator_category" => selected_category}, else: %{}
+
     case ConversationWorker.start_inference(
            conversation.id,
            llm_messages,
-           saved_message_id
+           saved_message_id,
+           metadata
          ) do
       {:ok, _pid} ->
         # Worker started successfully
@@ -1068,10 +1095,12 @@ defmodule ElixirBearWeb.ChatLive do
                   message.role == "user" && "bg-primary text-primary-content",
                   message.role == "assistant" && "bg-base-100 text-base-content shadow"
                 ]}>
-                  <div class="text-sm font-medium mb-1">
-                    {if message.role == "user", do: "You", else: "ElixirBear"}
+                  <div class="flex items-center justify-between gap-2 mb-1">
+                    <div class="text-sm font-medium">
+                      {if message.role == "user", do: "You", else: "ElixirBear"}
+                    </div>
                   </div>
-                  
+
     <!-- Show attachments if present -->
                   <%= if Map.has_key?(message, :attachments) && is_list(message.attachments) && length(message.attachments) > 0 do %>
                     <div class="mb-2 flex flex-wrap gap-2">
@@ -1128,7 +1157,19 @@ defmodule ElixirBearWeb.ChatLive do
                   <div class="prose prose-sm max-w-none message-content">
                     {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
                   </div>
-                  
+
+    <!-- System Prompt Badge (shown at bottom if orchestrator is enabled) -->
+                  <%= if message.role == "assistant" && Map.has_key?(message, :metadata) && Map.has_key?(message.metadata, "orchestrator_category") do %>
+                    <div class="mt-3 pt-3 border-t border-base-300 flex justify-end">
+                      <span class="badge badge-sm badge-primary gap-1">
+                        <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                        </svg>
+                        {message.metadata["orchestrator_category"]}
+                      </span>
+                    </div>
+                  <% end %>
+
     <!-- Save as Potion Button (only for assistant messages with code) -->
                   <%= if message.role == "assistant" && String.contains?(message.content, "```") && Map.get(message, :id) do %>
                     <div class="mt-3 pt-3 border-t border-base-300">

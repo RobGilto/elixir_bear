@@ -30,13 +30,14 @@ defmodule ElixirBear.ConversationWorker do
   Starts inference for a conversation.
   Returns {:ok, pid} if worker started, or {:error, reason} if already running.
   """
-  def start_inference(conversation_id, messages, user_message_id) do
+  def start_inference(conversation_id, messages, user_message_id, metadata \\ %{}) do
     case DynamicSupervisor.start_child(
            ElixirBear.ConversationWorkerSupervisor,
            {__MODULE__,
             conversation_id: conversation_id,
             messages: messages,
-            user_message_id: user_message_id}
+            user_message_id: user_message_id,
+            metadata: metadata}
          ) do
       {:ok, pid} ->
         GenServer.cast(pid, :start_streaming)
@@ -56,7 +57,7 @@ defmodule ElixirBear.ConversationWorker do
             # Small delay to let the process fully terminate
             Process.sleep(50)
             # Retry once
-            start_inference(conversation_id, messages, user_message_id)
+            start_inference(conversation_id, messages, user_message_id, metadata)
         end
 
       error ->
@@ -97,11 +98,13 @@ defmodule ElixirBear.ConversationWorker do
     conversation_id = Keyword.fetch!(opts, :conversation_id)
     messages = Keyword.fetch!(opts, :messages)
     user_message_id = Keyword.fetch!(opts, :user_message_id)
+    metadata = Keyword.get(opts, :metadata, %{})
 
     state = %{
       conversation_id: conversation_id,
       messages: messages,
       user_message_id: user_message_id,
+      metadata: metadata,
       content_buffer: "",
       status: :idle
     }
@@ -152,7 +155,8 @@ defmodule ElixirBear.ConversationWorker do
       case Chat.create_message(%{
              conversation_id: state.conversation_id,
              role: "assistant",
-             content: state.content_buffer
+             content: state.content_buffer,
+             metadata: state.metadata
            }) do
         {:ok, message} ->
           # Ensure attachments is an empty list (assistant messages have no attachments)

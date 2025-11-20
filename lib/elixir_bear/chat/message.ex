@@ -5,6 +5,7 @@ defmodule ElixirBear.Chat.Message do
   schema "messages" do
     field :role, :string
     field :content, :string
+    field :metadata, :map, default: %{}
 
     belongs_to :conversation, ElixirBear.Chat.Conversation
     has_many :attachments, ElixirBear.Chat.MessageAttachment
@@ -15,7 +16,7 @@ defmodule ElixirBear.Chat.Message do
   @doc false
   def changeset(message, attrs) do
     message
-    |> cast(attrs, [:conversation_id, :role, :content])
+    |> cast(attrs, [:conversation_id, :role, :content, :metadata])
     |> validate_required([:conversation_id, :role, :content])
     |> validate_inclusion(:role, ["system", "user", "assistant"])
     |> foreign_key_constraint(:conversation_id)
