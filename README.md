@@ -1,31 +1,78 @@
-# ElixirBear
+# ElixirBear 🐻✨
 
-A modern AI chat interface built with Phoenix LiveView that enables conversations with AI models, manages reusable code solutions, and provides a beautiful, customizable user experience.
+> A production-ready AI chat platform built with Phoenix LiveView, featuring intelligent solution management, multi-modal conversations, and real-time streaming.
 
-## Features
+[![Elixir](https://img.shields.io/badge/Elixir-1.15+-4B275F.svg)](https://elixir-lang.org/)
+[![Phoenix](https://img.shields.io/badge/Phoenix-1.8-orange.svg)](https://phoenixframework.org/)
+[![LiveView](https://img.shields.io/badge/LiveView-1.1-blue.svg)](https://hexdocs.pm/phoenix_live_view)
+[![License](https://img.shields.io/badge/License-Personal-green.svg)](LICENSE)
 
-### Chat Interface
-- **AI Conversations**: Interactive chat with AI models (supports both OpenAI and Ollama)
-- **Multi-modal Support**: Attach images, audio files, and code files to your messages
-- **Conversation Management**: Create, view, and manage multiple conversation threads
-- **Real-time Updates**: LiveView-powered real-time message streaming
-- **Background Customization**: Personalize your chat interface with custom background images
+**ElixirBear** is a sophisticated AI chat application that goes beyond simple conversations. It intelligently extracts, organizes, and retrieves code solutions from your chat history, making it a powerful tool for developers who want to build a personal knowledge base while interacting with AI models.
 
-### Solutions Management
-- **Code Solutions Library**: Store and organize reusable code snippets and solutions
-- **Automatic Extraction**: Extract solutions from chat conversations using LLM assistance
-- **Tagging System**: Categorize solutions with tags for easy retrieval
-- **Smart Router**: AI-powered solution matching to suggest relevant solutions for new queries
-- **Code Blocks**: Support for multiple code blocks per solution with syntax highlighting
+---
 
-### File Attachments
-Supports a wide variety of file types:
-- **Images**: `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp`
-- **Audio**: `.mp3`, `.mpga`, `.m4a`, `.wav`
-- **Code Files**: `.txt`, `.md`, `.ex`, `.exs`, `.heex`, `.eex`, `.leex`
-- **Web Files**: `.js`, `.jsx`, `.ts`, `.tsx`, `.css`, `.scss`, `.html`
-- **Config Files**: `.json`, `.xml`, `.yaml`, `.yml`, `.toml`
-- **Other Languages**: `.py`, `.rb`, `.java`, `.go`, `.rs`, `.c`, `.cpp`, `.h`, `.hpp`, `.sh`, `.bash`
+![Main Chat Interface](/docs/images/chat-interface.png)
+*👆 Recommended: Screenshot of the main chat interface showing a conversation with code blocks and file attachments*
+
+## ✨ Key Features
+
+### 💬 Intelligent Chat Interface
+Transform your AI conversations into a powerful development tool:
+
+- **🤖 Dual AI Provider Support**: Seamlessly switch between OpenAI's GPT models and local Ollama models
+- **🖼️ Multi-Modal Conversations**: Attach images, audio files, and code files directly to your messages
+- **⚡ Real-Time Streaming**: Experience instant, token-by-token response streaming powered by Phoenix LiveView
+- **📁 Smart Conversation Management**: Organize multiple conversation threads with easy navigation and search
+- **🎨 Customizable Interface**: Personalize your workspace with custom background images and themes
+
+![Multi-modal Chat](/docs/images/multimodal-example.png)
+*👆 Recommended: Screenshot showing an image attachment with AI analyzing it*
+
+### 🧠 AI-Powered Solution Management
+The standout feature that sets ElixirBear apart:
+
+- **🔍 Automatic Solution Extraction**: Let AI identify and extract valuable code solutions from your conversations automatically
+- **🏷️ Smart Tagging System**: Organize solutions with custom tags for lightning-fast retrieval
+- **🎯 Intelligent Solution Router**: AI-powered matching system that suggests relevant solutions as you chat
+- **📚 Code Block Support**: Store multiple code blocks per solution with full syntax highlighting
+- **🔄 Reusability at Scale**: Build your personal library of battle-tested solutions
+
+![Solutions Library](/docs/images/solutions-library.png)
+*👆 Recommended: Screenshot of the solutions page showing organized code snippets with tags*
+
+### 📎 Comprehensive File Support
+Work with virtually any file type in your conversations:
+
+| Category | Supported Formats |
+|----------|-------------------|
+| **Images** | `.jpg`, `.jpeg`, `.png`, `.gif`, `.webp` |
+| **Audio** | `.mp3`, `.mpga`, `.m4a`, `.wav` |
+| **Elixir** | `.ex`, `.exs`, `.heex`, `.eex`, `.leex` |
+| **Web** | `.js`, `.jsx`, `.ts`, `.tsx`, `.css`, `.scss`, `.html` |
+| **Config** | `.json`, `.xml`, `.yaml`, `.yml`, `.toml` |
+| **Languages** | `.py`, `.rb`, `.java`, `.go`, `.rs`, `.c`, `.cpp`, `.sh` and more |
+| **Documentation** | `.txt`, `.md` |
+
+### 🎯 Technical Highlights
+
+**Real-time Architecture**
+- Built on Phoenix PubSub for instant message delivery
+- LiveView integration eliminates the need for separate frontend framework
+- WebSocket-based streaming for token-by-token AI responses
+
+**Smart Background Processing**
+- Asynchronous conversation processing with dedicated workers
+- Non-blocking solution extraction and routing
+- Efficient handling of file uploads and processing
+
+**Developer-Friendly Design**
+- Clean separation of concerns with domain-driven design
+- Comprehensive test coverage
+- Pre-commit hooks for code quality
+- SQLite for simple deployment and portability
+
+![Architecture Diagram](/docs/images/architecture.png)
+*👆 Recommended: Simple diagram showing LiveView → AI Provider → Background Worker → Database flow*
 
 ## Technology Stack
 
@@ -65,7 +112,7 @@ This will:
    - For OpenAI: Set your API key in the Settings page after starting the server
    - For Ollama: Ensure Ollama is running locally and configure the endpoint in Settings
 
-## Usage
+## 🚀 Quick Start
 
 Start the Phoenix server:
 
@@ -81,16 +128,30 @@ iex -S mix phx.server
 
 Visit [`localhost:4000`](http://localhost:4000) in your browser.
 
-### First-time Setup
+### ⚙️ First-time Setup
 
-1. Navigate to Settings (`/settings`) to configure:
-   - OpenAI API key (if using OpenAI models)
-   - Ollama endpoint (if using local Ollama models)
-   - Solution extraction settings
-   - Solution router settings
+1. **Configure AI Provider** - Navigate to Settings (`/settings`):
+   - Add your OpenAI API key for GPT models, or
+   - Configure Ollama endpoint for local models (e.g., `http://localhost:11434`)
 
-2. Start a new conversation from the home page
-3. Begin chatting with your AI assistant!
+2. **Enable Smart Features** (Optional):
+   - Enable automatic solution extraction
+   - Configure the solution router for AI-powered suggestions
+
+3. **Start Chatting** - Create a new conversation and start building your knowledge base!
+
+![Settings Page](/docs/images/settings.png)
+*👆 Recommended: Screenshot of the settings page showing configuration options*
+
+## 🎬 Demo
+
+![Demo GIF](/docs/images/demo.gif)
+*👆 Recommended: Animated GIF showing:*
+1. *Starting a new conversation*
+2. *Asking a coding question*
+3. *Getting a solution with code blocks*
+4. *Solution being automatically extracted and tagged*
+5. *Later query showing the solution being suggested by the router*
 
 ## Development
 
@@ -132,24 +193,56 @@ Run migrations:
 mix ecto.migrate
 ```
 
-## Project Structure
+## 📁 Project Structure
+
+The codebase follows Phoenix conventions with domain-driven design:
 
 ```
 lib/
-├── elixir_bear/               # Core business logic
-│   ├── chat/                  # Chat domain (conversations, messages, settings)
-│   ├── solutions/             # Solutions domain (solutions, tags, extraction)
-│   ├── ollama.ex             # Ollama API integration
-│   ├── openai.ex             # OpenAI API integration
-│   └── conversation_worker.ex # Background worker for chat processing
-├── elixir_bear_web/          # Web interface
-│   ├── live/                 # LiveView modules
+├── elixir_bear/               # 🧠 Core business logic
+│   ├── chat/                  # 💬 Chat domain
+│   │   ├── conversation.ex   # Conversation schema and queries
+│   │   ├── message.ex        # Message schema
+│   │   └── settings.ex       # Application settings
+│   ├── solutions/             # 🔍 Solutions domain
+│   │   ├── solution.ex       # Solution schema and queries
+│   │   ├── tag.ex            # Tag system
+│   │   ├── extractor.ex      # AI-powered solution extraction
+│   │   └── router.ex         # Smart solution matching
+│   ├── ollama.ex             # 🦙 Ollama API client
+│   ├── openai.ex             # 🤖 OpenAI API client
+│   └── conversation_worker.ex # ⚙️ Background processing
+│
+├── elixir_bear_web/          # 🌐 Web interface
+│   ├── live/                 # ⚡ LiveView modules
 │   │   ├── chat_live.ex     # Main chat interface
 │   │   ├── solutions_live.ex # Solutions library
-│   │   └── settings_live.ex  # Settings page
-│   ├── components/           # Reusable components
-│   └── router.ex            # Application routes
+│   │   └── settings_live.ex  # Settings management
+│   ├── components/           # 🧩 Reusable UI components
+│   └── router.ex            # 🛣️ Application routes
+│
+├── test/                     # 🧪 Comprehensive test suite
+└── priv/                     # 📦 Static assets & migrations
 ```
+
+## 🏗️ Architecture Decisions
+
+**Why Phoenix LiveView?**
+- Real-time updates without complex JavaScript frameworks
+- Server-side rendering with minimal client-side code
+- Built-in WebSocket handling and connection management
+- Simplified state management
+
+**Why SQLite?**
+- Zero-configuration database setup
+- Perfect for single-user or small-team deployments
+- Easy backup and portability
+- Excellent performance for this use case
+
+**Why Background Workers?**
+- Non-blocking AI API calls
+- Smooth user experience during solution extraction
+- Scalable processing for multiple concurrent conversations
 
 ## Configuration
 
@@ -159,17 +252,55 @@ Key configuration files:
 - `config/prod.exs` - Production environment settings
 - `AGENTS.md` - Development guidelines and coding standards
 
-## Contributing
+## 🎯 Use Cases
 
-When contributing to this project, please follow the guidelines in `AGENTS.md` for:
+**For Developers**
+- Build a personal library of coding solutions and patterns
+- Quickly reference solutions from past AI conversations
+- Learn by reviewing and organizing code snippets
+
+**For Teams**
+- Share and reuse common solutions across projects
+- Document tribal knowledge in an accessible format
+- Onboard new team members with curated solutions
+
+**For Learners**
+- Study AI-generated solutions with syntax highlighting
+- Organize learning materials by topic using tags
+- Track your coding journey through conversation history
+
+## 🤝 Contributing
+
+Contributions are welcome! Please follow the guidelines in `AGENTS.md` for:
 - Phoenix LiveView best practices
 - Elixir coding standards
 - UI/UX design principles
 - Testing strategies
 
-## License
+## 📄 License
 
 This project is available for personal and educational use.
+
+## 🙏 Acknowledgments
+
+Built with these amazing technologies:
+- [Phoenix Framework](https://www.phoenixframework.org/) - The productive web framework
+- [Phoenix LiveView](https://hexdocs.pm/phoenix_live_view) - Real-time server-rendered HTML
+- [Elixir](https://elixir-lang.org/) - Scalable and maintainable language
+- [OpenAI](https://platform.openai.com/docs) - Powerful AI models
+- [Ollama](https://ollama.ai/) - Run LLMs locally
+
+---
+
+<p align="center">
+  <strong>Built with ❤️ using Elixir and Phoenix LiveView</strong>
+</p>
+
+<p align="center">
+  <img src="/docs/images/tech-stack.png" alt="Tech Stack" />
+</p>
+
+*👆 Recommended: Banner image showing logos of Elixir, Phoenix, LiveView, OpenAI, and Ollama*
 
 ## Resources
 
