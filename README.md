@@ -12,7 +12,7 @@
 ---
 
 ![Main Chat Interface](/docs/images/chat-interface.png)
-*👆 Recommended: Screenshot of the main chat interface showing a conversation with code blocks and file attachments*
+
 
 ## ✨ Key Features
 
@@ -26,7 +26,7 @@ Transform your AI conversations into a powerful development tool:
 - **🎨 Customizable Interface**: Personalize your workspace with custom background images and themes
 
 ![Multi-modal Chat](/docs/images/multimodal-example.png)
-*👆 Recommended: Screenshot showing an image attachment with AI analyzing it*
+
 
 ### 🧠 AI-Powered Solution Management
 The standout feature that sets ElixirBear apart:
@@ -38,7 +38,6 @@ The standout feature that sets ElixirBear apart:
 - **🔄 Reusability at Scale**: Build your personal library of battle-tested solutions
 
 ![Solutions Library](/docs/images/solutions-library.png)
-*👆 Recommended: Screenshot of the solutions page showing organized code snippets with tags*
 
 ### 📎 Comprehensive File Support
 Work with virtually any file type in your conversations:
@@ -71,8 +70,6 @@ Work with virtually any file type in your conversations:
 - Pre-commit hooks for code quality
 - SQLite for simple deployment and portability
 
-![Architecture Diagram](/docs/images/architecture.png)
-*👆 Recommended: Simple diagram showing LiveView → AI Provider → Background Worker → Database flow*
 
 ## Technology Stack
 
@@ -140,13 +137,9 @@ Visit [`localhost:4000`](http://localhost:4000) in your browser.
 
 3. **Start Chatting** - Create a new conversation and start building your knowledge base!
 
-![Settings Page](/docs/images/settings.png)
-*👆 Recommended: Screenshot of the settings page showing configuration options*
 
 ## 🎬 Demo
 
-![Demo GIF](/docs/images/demo.gif)
-*👆 Recommended: Animated GIF showing:*
 1. *Starting a new conversation*
 2. *Asking a coding question*
 3. *Getting a solution with code blocks*
