@@ -286,14 +286,9 @@ Built with these amazing technologies:
 ---
 
 <p align="center">
-  <strong>Built with ❤️ using Elixir and Phoenix LiveView</strong>
+  <strong>Built using Elixir and Phoenix LiveView</strong>
 </p>
 
-<p align="center">
-  <img src="/docs/images/tech-stack.png" alt="Tech Stack" />
-</p>
-
-*👆 Recommended: Banner image showing logos of Elixir, Phoenix, LiveView, OpenAI, and Ollama*
 
 ## Resources
 
