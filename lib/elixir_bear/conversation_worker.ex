@@ -71,7 +71,9 @@ defmodule ElixirBear.ConversationWorker do
   """
   def get_status(conversation_id) do
     case GenServer.whereis(via_tuple(conversation_id)) do
-      nil -> {:error, :not_found}
+      nil ->
+        {:error, :not_found}
+
       pid ->
         try do
           GenServer.call(pid, :get_status, 100)
@@ -199,7 +201,10 @@ defmodule ElixirBear.ConversationWorker do
 
   @impl true
   def terminate(reason, state) do
-    Logger.info("Worker terminating for conversation #{state.conversation_id}, reason: #{inspect(reason)}")
+    Logger.info(
+      "Worker terminating for conversation #{state.conversation_id}, reason: #{inspect(reason)}"
+    )
+
     :ok
   end
 
@@ -223,12 +228,15 @@ defmodule ElixirBear.ConversationWorker do
         _ -> "gpt-4o-mini"
       end
 
-    Logger.info("Starting LLM stream - Provider: #{llm_provider}, Model: #{model}, Messages: #{length(llm_messages)}")
+    Logger.info(
+      "Starting LLM stream - Provider: #{llm_provider}, Model: #{model}, Messages: #{length(llm_messages)}"
+    )
 
     # Check if any message has images (requires OpenAI Vision)
     has_images =
       Enum.any?(llm_messages, fn msg ->
         content = Map.get(msg, :content) || Map.get(msg, "content")
+
         is_list(content) and
           Enum.any?(content, fn part ->
             part_type = Map.get(part, :type) || Map.get(part, "type")

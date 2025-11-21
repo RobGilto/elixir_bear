@@ -20,7 +20,15 @@ defmodule ElixirBear.Solutions.Solution do
   @doc false
   def changeset(solution, attrs) do
     solution
-    |> cast(attrs, [:title, :user_query, :answer_content, :metadata, :similarity_embedding, :conversation_id, :message_id])
+    |> cast(attrs, [
+      :title,
+      :user_query,
+      :answer_content,
+      :metadata,
+      :similarity_embedding,
+      :conversation_id,
+      :message_id
+    ])
     |> validate_required([:user_query, :answer_content])
     |> foreign_key_constraint(:conversation_id)
     |> foreign_key_constraint(:message_id)

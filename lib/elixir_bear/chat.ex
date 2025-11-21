@@ -53,7 +53,9 @@ defmodule ElixirBear.Chat do
   """
   def get_orchestrator_prompts do
     case get_setting_value("orchestrator_prompts") do
-      nil -> %{}
+      nil ->
+        %{}
+
       json_string ->
         case Jason.decode(json_string) do
           {:ok, prompts} when is_map(prompts) -> prompts
@@ -268,6 +270,7 @@ defmodule ElixirBear.Chat do
 
       # Select the chosen image
       background_image = get_background_image!(id)
+
       background_image
       |> BackgroundImage.changeset(%{is_selected: true})
       |> Repo.update!()

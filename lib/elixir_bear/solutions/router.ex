@@ -131,15 +131,17 @@ defmodule ElixirBear.Solutions.Router do
     solutions_text =
       solutions
       |> Enum.map(fn solution ->
-        topics = Enum.filter(solution.tags, fn tag -> tag.tag_type == "topic" end)
-        |> Enum.map(& &1.tag_value)
-        |> Enum.join(", ")
+        topics =
+          Enum.filter(solution.tags, fn tag -> tag.tag_type == "topic" end)
+          |> Enum.map(& &1.tag_value)
+          |> Enum.join(", ")
 
-        difficulty = Enum.find(solution.tags, fn tag -> tag.tag_type == "difficulty" end)
-        |> case do
-          nil -> "unknown"
-          tag -> tag.tag_value
-        end
+        difficulty =
+          Enum.find(solution.tags, fn tag -> tag.tag_type == "difficulty" end)
+          |> case do
+            nil -> "unknown"
+            tag -> tag.tag_value
+          end
 
         """
         ID: #{solution.id}
@@ -181,7 +183,10 @@ defmodule ElixirBear.Solutions.Router do
             {:error, :no_match}
 
           confidence < threshold ->
-            Logger.info("Router: Match found but confidence #{confidence} below threshold #{threshold}")
+            Logger.info(
+              "Router: Match found but confidence #{confidence} below threshold #{threshold}"
+            )
+
             {:error, :below_threshold}
 
           true ->

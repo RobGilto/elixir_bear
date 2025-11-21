@@ -27,6 +27,42 @@ import topbar from "../vendor/topbar"
 
 // Custom hooks
 const Hooks = {
+  UploadPreview: {
+    mounted() {
+      // Watch for preview images created by live_img_preview
+      this.previewMap = {}
+
+      const observePreviews = () => {
+        const previews = document.querySelectorAll('img[id^="phx-preview-"]')
+        previews.forEach(img => {
+          const name = img.getAttribute('data-client-name') || img.getAttribute('alt') || null
+          if (!name) return
+          this.previewMap[name] = img.src
+        })
+      }
+
+      // Observe DOM changes to pick up preview images
+      const ro = new MutationObserver((mutations) => {
+        observePreviews()
+      })
+      ro.observe(this.el, { childList: true, subtree: true })
+
+      // Intercept submit to send preview mapping for first file
+      const form = this.el.closest('form') || this.el
+      if (form) {
+        form.addEventListener('submit', (e) => {
+          // pick first pending preview and push to LiveView
+          const entries = Object.entries(this.previewMap)
+          if (entries.length > 0) {
+            const [client_name, preview_url] = entries[0]
+            this.pushEvent('background_preview', { client_name, preview_url })
+          }
+        })
+      }
+    }
+  },
+
+  
   PasteUpload: {
     mounted() {
       this.el.addEventListener("paste", (e) => {

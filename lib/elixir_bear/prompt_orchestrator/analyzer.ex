@@ -192,7 +192,10 @@ defmodule ElixirBear.PromptOrchestrator.Analyzer do
         confidence = parsed["confidence"] || 0.0
         reasoning = parsed["reasoning"] || ""
 
-        Logger.info("Orchestrator: Category selected - #{inspect(category)}, Confidence: #{confidence}")
+        Logger.info(
+          "Orchestrator: Category selected - #{inspect(category)}, Confidence: #{confidence}"
+        )
+
         Logger.debug("Orchestrator: Reasoning: #{reasoning}")
 
         cond do
@@ -200,7 +203,10 @@ defmodule ElixirBear.PromptOrchestrator.Analyzer do
             {:error, :no_match}
 
           category not in categories ->
-            Logger.warning("Orchestrator: Selected category '#{category}' not in available categories")
+            Logger.warning(
+              "Orchestrator: Selected category '#{category}' not in available categories"
+            )
+
             # Try to find a partial match (e.g., if LLM returned "python" but we only have "python/django")
             find_fallback_category(category, categories, confidence)
 

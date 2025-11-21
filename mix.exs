@@ -68,7 +68,8 @@ defmodule ElixirBear.MixProject do
       {:bandit, "~> 1.5"},
       {:earmark, "~> 1.4"},
       {:makeup, "~> 1.1"},
-      {:makeup_elixir, "~> 0.16"}
+      {:makeup_elixir, "~> 0.16"},
+      {:tidewave, "~> 0.5", only: :dev}
     ]
   end
 

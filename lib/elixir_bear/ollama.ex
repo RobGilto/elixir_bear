@@ -188,7 +188,7 @@ defmodule ElixirBear.Ollama do
     text_content =
       content
       |> Enum.filter(fn part ->
-        (is_map(part) && (part["type"] == "text" || part[:type] == "text"))
+        is_map(part) && (part["type"] == "text" || part[:type] == "text")
       end)
       |> Enum.map(fn part -> part["text"] || part[:text] end)
       |> Enum.join("\n")

@@ -681,7 +681,10 @@ defmodule ElixirBearWeb.ChatLive do
         {system_prompt, selected_category} =
           case Analyzer.analyze_and_select_prompt(user_message) do
             {:ok, category, confidence} ->
-              Logger.info("Orchestrator: Selected category '#{category}' with confidence #{confidence}")
+              Logger.info(
+                "Orchestrator: Selected category '#{category}' with confidence #{confidence}"
+              )
+
               prompt = Chat.get_prompt_for_category(category)
               # If prompt is nil or empty, use default system prompt
               final_prompt = if prompt && prompt != "", do: prompt, else: default_system_prompt
@@ -747,18 +750,32 @@ defmodule ElixirBearWeb.ChatLive do
           _ ->
             # No match or router disabled, proceed with normal LLM inference
             Logger.info("Router: No match found, proceeding with LLM")
-            start_llm_inference(socket, conversation, llm_messages, saved_message.id, selected_category)
+
+            start_llm_inference(
+              socket,
+              conversation,
+              llm_messages,
+              saved_message.id,
+              selected_category
+            )
         end
     end
   end
 
-  defp start_llm_inference(socket, conversation, llm_messages, saved_message_id, selected_category \\ nil) do
+  defp start_llm_inference(
+         socket,
+         conversation,
+         llm_messages,
+         saved_message_id,
+         selected_category \\ nil
+       ) do
     # Start conversation worker for background inference
     require Logger
     Logger.info("Attempting to start worker for conversation #{conversation.id}")
 
     # Prepare metadata for assistant message
-    metadata = if selected_category, do: %{"orchestrator_category" => selected_category}, else: %{}
+    metadata =
+      if selected_category, do: %{"orchestrator_category" => selected_category}, else: %{}
 
     case ConversationWorker.start_inference(
            conversation.id,
@@ -1100,7 +1117,7 @@ defmodule ElixirBearWeb.ChatLive do
                       {if message.role == "user", do: "You", else: "ElixirBear"}
                     </div>
                   </div>
-
+                  
     <!-- Show attachments if present -->
                   <%= if Map.has_key?(message, :attachments) && is_list(message.attachments) && length(message.attachments) > 0 do %>
                     <div class="mb-2 flex flex-wrap gap-2">
@@ -1157,19 +1174,25 @@ defmodule ElixirBearWeb.ChatLive do
                   <div class="prose prose-sm max-w-none message-content">
                     {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
                   </div>
-
+                  
     <!-- System Prompt Badge (shown at bottom if orchestrator is enabled) -->
                   <%= if message.role == "assistant" && Map.has_key?(message, :metadata) && Map.has_key?(message.metadata, "orchestrator_category") do %>
                     <div class="mt-3 pt-3 border-t border-base-300 flex justify-end">
                       <span class="badge badge-sm badge-primary gap-1">
                         <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                          <path
+                            stroke-linecap="round"
+                            stroke-linejoin="round"
+                            stroke-width="2"
+                            d="M13 10V3L4 14h7v7l9-11h-7z"
+                          >
+                          </path>
                         </svg>
                         {message.metadata["orchestrator_category"]}
                       </span>
                     </div>
                   <% end %>
-
+                  
     <!-- Save as Potion Button (only for assistant messages with code) -->
                   <%= if message.role == "assistant" && String.contains?(message.content, "```") && Map.get(message, :id) do %>
                     <div class="mt-3 pt-3 border-t border-base-300">

@@ -110,10 +110,11 @@ defmodule ElixirBear.Solutions.MarkdownParser do
     }
   end
 
-  def extract_metadata(_), do: %{
-    has_code_blocks: false,
-    code_block_count: 0,
-    languages: [],
-    content_length: 0
-  }
+  def extract_metadata(_),
+    do: %{
+      has_code_blocks: false,
+      code_block_count: 0,
+      languages: [],
+      content_length: 0
+    }
 end

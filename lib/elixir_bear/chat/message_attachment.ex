@@ -20,7 +20,15 @@ defmodule ElixirBear.Chat.MessageAttachment do
   @doc false
   def changeset(message_attachment, attrs) do
     message_attachment
-    |> cast(attrs, [:message_id, :file_type, :file_path, :original_name, :mime_type, :file_size, :metadata])
+    |> cast(attrs, [
+      :message_id,
+      :file_type,
+      :file_path,
+      :original_name,
+      :mime_type,
+      :file_size,
+      :metadata
+    ])
     |> validate_required([:message_id, :file_type, :file_path, :original_name, :mime_type])
     |> validate_inclusion(:file_type, ["image", "audio", "text"])
     |> foreign_key_constraint(:message_id)

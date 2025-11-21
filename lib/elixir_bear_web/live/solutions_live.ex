@@ -45,12 +45,13 @@ defmodule ElixirBearWeb.SolutionsLive do
 
   @impl true
   def handle_event("search", %{"query" => query}, socket) do
-    filtered = filter_solutions(socket.assigns.solutions, %{
-      search_query: query,
-      topic: socket.assigns.selected_topic,
-      difficulty: socket.assigns.selected_difficulty,
-      language: socket.assigns.selected_language
-    })
+    filtered =
+      filter_solutions(socket.assigns.solutions, %{
+        search_query: query,
+        topic: socket.assigns.selected_topic,
+        difficulty: socket.assigns.selected_difficulty,
+        language: socket.assigns.selected_language
+      })
 
     {:noreply, assign(socket, search_query: query, filtered_solutions: filtered)}
   end
@@ -58,12 +59,13 @@ defmodule ElixirBearWeb.SolutionsLive do
   def handle_event("filter_topic", %{"topic" => topic}, socket) do
     topic = if topic == "", do: nil, else: topic
 
-    filtered = filter_solutions(socket.assigns.solutions, %{
-      search_query: socket.assigns.search_query,
-      topic: topic,
-      difficulty: socket.assigns.selected_difficulty,
-      language: socket.assigns.selected_language
-    })
+    filtered =
+      filter_solutions(socket.assigns.solutions, %{
+        search_query: socket.assigns.search_query,
+        topic: topic,
+        difficulty: socket.assigns.selected_difficulty,
+        language: socket.assigns.selected_language
+      })
 
     {:noreply, assign(socket, selected_topic: topic, filtered_solutions: filtered)}
   end
@@ -71,12 +73,13 @@ defmodule ElixirBearWeb.SolutionsLive do
   def handle_event("filter_difficulty", %{"difficulty" => difficulty}, socket) do
     difficulty = if difficulty == "", do: nil, else: difficulty
 
-    filtered = filter_solutions(socket.assigns.solutions, %{
-      search_query: socket.assigns.search_query,
-      topic: socket.assigns.selected_topic,
-      difficulty: difficulty,
-      language: socket.assigns.selected_language
-    })
+    filtered =
+      filter_solutions(socket.assigns.solutions, %{
+        search_query: socket.assigns.search_query,
+        topic: socket.assigns.selected_topic,
+        difficulty: difficulty,
+        language: socket.assigns.selected_language
+      })
 
     {:noreply, assign(socket, selected_difficulty: difficulty, filtered_solutions: filtered)}
   end
@@ -84,12 +87,13 @@ defmodule ElixirBearWeb.SolutionsLive do
   def handle_event("filter_language", %{"language" => language}, socket) do
     language = if language == "", do: nil, else: language
 
-    filtered = filter_solutions(socket.assigns.solutions, %{
-      search_query: socket.assigns.search_query,
-      topic: socket.assigns.selected_topic,
-      difficulty: socket.assigns.selected_difficulty,
-      language: language
-    })
+    filtered =
+      filter_solutions(socket.assigns.solutions, %{
+        search_query: socket.assigns.search_query,
+        topic: socket.assigns.selected_topic,
+        difficulty: socket.assigns.selected_difficulty,
+        language: language
+      })
 
     {:noreply, assign(socket, selected_language: language, filtered_solutions: filtered)}
   end
@@ -128,6 +132,7 @@ defmodule ElixirBearWeb.SolutionsLive do
       update_in(socket.assigns.edit_solution.metadata, fn meta ->
         Map.put(meta || %{}, "description", description)
       end)
+
     {:noreply, assign(socket, edit_solution: updated_solution)}
   end
 
@@ -143,6 +148,7 @@ defmodule ElixirBearWeb.SolutionsLive do
 
   def handle_event("update_code_block", %{"id" => id, "value" => code}, socket) do
     block_id = String.to_integer(id)
+
     updated_solution =
       update_in(socket.assigns.edit_solution.code_blocks, fn blocks ->
         Enum.map(blocks, fn block ->
@@ -153,11 +159,13 @@ defmodule ElixirBearWeb.SolutionsLive do
           end
         end)
       end)
+
     {:noreply, assign(socket, edit_solution: updated_solution)}
   end
 
   def handle_event("update_code_block_language", %{"id" => id, "value" => language}, socket) do
     block_id = String.to_integer(id)
+
     updated_solution =
       update_in(socket.assigns.edit_solution.code_blocks, fn blocks ->
         Enum.map(blocks, fn block ->
@@ -168,6 +176,7 @@ defmodule ElixirBearWeb.SolutionsLive do
           end
         end)
       end)
+
     {:noreply, assign(socket, edit_solution: updated_solution)}
   end
 
@@ -176,6 +185,7 @@ defmodule ElixirBearWeb.SolutionsLive do
 
     # Delete from database
     block = Enum.find(socket.assigns.edit_solution.code_blocks, fn b -> b.id == block_id end)
+
     if block do
       Solutions.delete_code_block(block)
     end
@@ -185,6 +195,7 @@ defmodule ElixirBearWeb.SolutionsLive do
       update_in(socket.assigns.edit_solution.code_blocks, fn blocks ->
         Enum.reject(blocks, fn block -> block.id == block_id end)
       end)
+
     {:noreply, assign(socket, edit_solution: updated_solution)}
   end
 
@@ -192,20 +203,21 @@ defmodule ElixirBearWeb.SolutionsLive do
     solution = socket.assigns.edit_solution
 
     # Update solution
-    solution_result = Solutions.update_solution(solution, %{
-      title: solution.title,
-      metadata: solution.metadata,
-      answer_content: solution.answer_content,
-      user_query: solution.user_query
-    })
+    solution_result =
+      Solutions.update_solution(solution, %{
+        title: solution.title,
+        metadata: solution.metadata,
+        answer_content: solution.answer_content,
+        user_query: solution.user_query
+      })
 
     # Update code blocks
     code_blocks_result =
       Enum.reduce_while(solution.code_blocks, {:ok, []}, fn block, {:ok, acc} ->
         case Solutions.update_code_block(block, %{
-          code: block.code,
-          language: block.language
-        }) do
+               code: block.code,
+               language: block.language
+             }) do
           {:ok, updated_block} -> {:cont, {:ok, [updated_block | acc]}}
           {:error, changeset} -> {:halt, {:error, changeset}}
         end
@@ -214,12 +226,14 @@ defmodule ElixirBearWeb.SolutionsLive do
     case {solution_result, code_blocks_result} do
       {{:ok, _updated}, {:ok, _blocks}} ->
         solutions = Solutions.list_solutions()
-        filtered = filter_solutions(solutions, %{
-          search_query: socket.assigns.search_query,
-          topic: socket.assigns.selected_topic,
-          difficulty: socket.assigns.selected_difficulty,
-          language: socket.assigns.selected_language
-        })
+
+        filtered =
+          filter_solutions(solutions, %{
+            search_query: socket.assigns.search_query,
+            topic: socket.assigns.selected_topic,
+            difficulty: socket.assigns.selected_difficulty,
+            language: socket.assigns.selected_language
+          })
 
         {:noreply,
          socket
@@ -247,12 +261,14 @@ defmodule ElixirBearWeb.SolutionsLive do
     case Solutions.delete_solution(solution) do
       {:ok, _deleted} ->
         solutions = Solutions.list_solutions()
-        filtered = filter_solutions(solutions, %{
-          search_query: socket.assigns.search_query,
-          topic: socket.assigns.selected_topic,
-          difficulty: socket.assigns.selected_difficulty,
-          language: socket.assigns.selected_language
-        })
+
+        filtered =
+          filter_solutions(solutions, %{
+            search_query: socket.assigns.search_query,
+            topic: socket.assigns.selected_topic,
+            difficulty: socket.assigns.selected_difficulty,
+            language: socket.assigns.selected_language
+          })
 
         # Refresh tag lists
         all_topics = extract_all_tags(solutions, "topic")
@@ -364,8 +380,8 @@ defmodule ElixirBearWeb.SolutionsLive do
               Browse and search your saved Elixir learning potions
             </p>
           </div>
-
-          <!-- Search and Filters -->
+          
+    <!-- Search and Filters -->
           <div class="card bg-base-200/80 backdrop-blur-sm shadow-xl mb-6">
             <div class="card-body">
               <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -384,8 +400,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                     />
                   </form>
                 </div>
-
-                <!-- Topic Filter -->
+                
+    <!-- Topic Filter -->
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text">Topic</span>
@@ -394,13 +410,13 @@ defmodule ElixirBearWeb.SolutionsLive do
                     <select class="select select-bordered w-full" name="topic">
                       <option value="">All Topics</option>
                       <%= for topic <- @all_topics do %>
-                        <option value={topic} selected={topic == @selected_topic}><%= topic %></option>
+                        <option value={topic} selected={topic == @selected_topic}>{topic}</option>
                       <% end %>
                     </select>
                   </form>
                 </div>
-
-                <!-- Difficulty Filter -->
+                
+    <!-- Difficulty Filter -->
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text">Difficulty</span>
@@ -410,14 +426,14 @@ defmodule ElixirBearWeb.SolutionsLive do
                       <option value="">All Difficulties</option>
                       <%= for difficulty <- @all_difficulties do %>
                         <option value={difficulty} selected={difficulty == @selected_difficulty}>
-                          <%= String.capitalize(difficulty) %>
+                          {String.capitalize(difficulty)}
                         </option>
                       <% end %>
                     </select>
                   </form>
                 </div>
-
-                <!-- Language Filter -->
+                
+    <!-- Language Filter -->
                 <div class="form-control">
                   <label class="label">
                     <span class="label-text">Language</span>
@@ -427,15 +443,15 @@ defmodule ElixirBearWeb.SolutionsLive do
                       <option value="">All Languages</option>
                       <%= for language <- @all_languages do %>
                         <option value={language} selected={language == @selected_language}>
-                          <%= language %>
+                          {language}
                         </option>
                       <% end %>
                     </select>
                   </form>
                 </div>
               </div>
-
-              <!-- Clear Filters Button -->
+              
+    <!-- Clear Filters Button -->
               <%= if @selected_topic || @selected_difficulty || @selected_language || @search_query != "" do %>
                 <div class="mt-4">
                   <button class="btn btn-sm btn-ghost" phx-click="clear_filters">
@@ -445,15 +461,15 @@ defmodule ElixirBearWeb.SolutionsLive do
               <% end %>
             </div>
           </div>
-
-          <!-- Results Count -->
+          
+    <!-- Results Count -->
           <div class="mb-4">
             <p class="text-sm text-base-content/70">
-              Showing <%= length(@filtered_solutions) %> of <%= length(@solutions) %> potions
+              Showing {length(@filtered_solutions)} of {length(@solutions)} potions
             </p>
           </div>
-
-          <!-- Solutions Grid -->
+          
+    <!-- Solutions Grid -->
           <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <%= for solution <- @filtered_solutions do %>
               <.link
@@ -462,42 +478,42 @@ defmodule ElixirBearWeb.SolutionsLive do
               >
                 <div class="card-body">
                   <h2 class="card-title text-lg">
-                    <%= solution.title || "Untitled Potion" %>
+                    {solution.title || "Untitled Potion"}
                   </h2>
 
                   <p class="text-sm text-base-content/70 line-clamp-2">
-                    <%= solution.user_query %>
+                    {solution.user_query}
                   </p>
 
                   <%= if get_in(solution.metadata, ["description"]) do %>
                     <p class="text-sm text-base-content/60 line-clamp-2 mt-2">
-                      <%= get_in(solution.metadata, ["description"]) %>
+                      {get_in(solution.metadata, ["description"])}
                     </p>
                   <% end %>
-
-                  <!-- Tags -->
+                  
+    <!-- Tags -->
                   <div class="flex flex-wrap gap-2 mt-4">
                     <%= for tag <- Enum.filter(solution.tags, fn t -> t.tag_type == "topic" end) |> Enum.take(3) do %>
-                      <span class="badge badge-primary badge-sm"><%= tag.tag_value %></span>
+                      <span class="badge badge-primary badge-sm">{tag.tag_value}</span>
                     <% end %>
 
                     <%= for tag <- Enum.filter(solution.tags, fn t -> t.tag_type == "difficulty" end) do %>
                       <span class={"badge badge-sm #{difficulty_badge_class(tag.tag_value)}"}>
-                        <%= tag.tag_value %>
+                        {tag.tag_value}
                       </span>
                     <% end %>
                   </div>
-
-                  <!-- Code Block Count -->
+                  
+    <!-- Code Block Count -->
                   <div class="text-xs text-base-content/50 mt-2">
-                    <%= length(solution.code_blocks) %> code block(s)
+                    {length(solution.code_blocks)} code block(s)
                   </div>
                 </div>
               </.link>
             <% end %>
           </div>
-
-          <!-- Empty State -->
+          
+    <!-- Empty State -->
           <%= if length(@filtered_solutions) == 0 do %>
             <div class="card bg-base-200/80 backdrop-blur-sm shadow-xl">
               <div class="card-body items-center text-center">
@@ -519,8 +535,8 @@ defmodule ElixirBearWeb.SolutionsLive do
           <% end %>
         </div>
       </div>
-
-      <!-- Solution Detail Modal -->
+      
+    <!-- Solution Detail Modal -->
       <%= if @selected_solution do %>
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div class="card bg-base-100 shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col">
@@ -529,23 +545,23 @@ defmodule ElixirBearWeb.SolutionsLive do
               <div class="flex justify-between items-start mb-4">
                 <div class="flex-1">
                   <h2 class="card-title text-2xl mb-2">
-                    <%= @selected_solution.title || "Untitled Potion" %>
+                    {@selected_solution.title || "Untitled Potion"}
                   </h2>
-
-                  <!-- Tags -->
+                  
+    <!-- Tags -->
                   <div class="flex flex-wrap gap-2 mb-4">
                     <%= for tag <- Enum.filter(@selected_solution.tags, fn t -> t.tag_type == "topic" end) do %>
-                      <span class="badge badge-primary"><%= tag.tag_value %></span>
+                      <span class="badge badge-primary">{tag.tag_value}</span>
                     <% end %>
 
                     <%= for tag <- Enum.filter(@selected_solution.tags, fn t -> t.tag_type == "difficulty" end) do %>
                       <span class={"badge #{difficulty_badge_class(tag.tag_value)}"}>
-                        <%= tag.tag_value %>
+                        {tag.tag_value}
                       </span>
                     <% end %>
 
                     <%= for tag <- Enum.filter(@selected_solution.tags, fn t -> t.tag_type == "language" end) do %>
-                      <span class="badge badge-neutral"><%= tag.tag_value %></span>
+                      <span class="badge badge-neutral">{tag.tag_value}</span>
                     <% end %>
                   </div>
                 </div>
@@ -554,8 +570,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   ✕
                 </button>
               </div>
-
-              <!-- Action Buttons -->
+              
+    <!-- Action Buttons -->
               <div class="flex gap-2 mb-4">
                 <button
                   class="btn btn-sm btn-primary gap-2"
@@ -615,26 +631,26 @@ defmodule ElixirBearWeb.SolutionsLive do
                     >
                     </path>
                   </svg>
-                  <span><%= get_in(@selected_solution.metadata, ["description"]) %></span>
+                  <span>{get_in(@selected_solution.metadata, ["description"])}</span>
                 </div>
               <% end %>
-
-              <!-- User Question -->
+              
+    <!-- User Question -->
               <div class="mb-6">
                 <h3 class="font-bold text-lg mb-2">Question</h3>
                 <div class="bg-base-200 p-4 rounded-lg">
-                  <%= @selected_solution.user_query %>
+                  {@selected_solution.user_query}
                 </div>
               </div>
-
-              <!-- Code Blocks -->
+              
+    <!-- Code Blocks -->
               <%= if length(@selected_solution.code_blocks) > 0 do %>
                 <div class="mb-6">
                   <h3 class="font-bold text-lg mb-2">Code Examples</h3>
                   <%= for code_block <- Enum.sort_by(@selected_solution.code_blocks, & &1.order) do %>
                     <div class="mb-4">
                       <%= if code_block.description do %>
-                        <p class="text-sm text-base-content/70 mb-2"><%= code_block.description %></p>
+                        <p class="text-sm text-base-content/70 mb-2">{code_block.description}</p>
                       <% end %>
                       <div class="mockup-code">
                         <pre><code class={"language-#{code_block.language}"}><%= code_block.code %></code></pre>
@@ -643,37 +659,37 @@ defmodule ElixirBearWeb.SolutionsLive do
                   <% end %>
                 </div>
               <% end %>
-
-              <!-- Full Answer -->
+              
+    <!-- Full Answer -->
               <div>
                 <h3 class="font-bold text-lg mb-2">Full Answer</h3>
                 <div class="prose max-w-none">
-                  <%= raw(
+                  {raw(
                     @selected_solution.answer_content
                     |> Earmark.as_html!()
-                  ) %>
+                  )}
                 </div>
               </div>
-
-              <!-- Metadata -->
+              
+    <!-- Metadata -->
               <div class="text-xs text-base-content/50 mt-6 pt-4 border-t border-base-300">
                 <p>
-                  Saved: <%= Calendar.strftime(@selected_solution.inserted_at, "%B %d, %Y at %I:%M %p") %>
+                  Saved: {Calendar.strftime(@selected_solution.inserted_at, "%B %d, %Y at %I:%M %p")}
                 </p>
               </div>
             </div>
           </div>
         </div>
       <% end %>
-
-      <!-- Edit Modal -->
+      
+    <!-- Edit Modal -->
       <%= if @show_edit_modal && @edit_solution do %>
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div class="card bg-base-100 shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col">
             <div class="card-body overflow-y-auto">
               <h2 class="card-title text-2xl mb-4">Edit Potion</h2>
-
-              <!-- Title -->
+              
+    <!-- Title -->
               <div class="form-control mb-4">
                 <label class="label">
                   <span class="label-text font-semibold">Title</span>
@@ -685,8 +701,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   phx-blur="update_edit_title"
                 />
               </div>
-
-              <!-- Description -->
+              
+    <!-- Description -->
               <div class="form-control mb-4">
                 <label class="label">
                   <span class="label-text font-semibold">Description</span>
@@ -697,8 +713,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   phx-blur="update_edit_description"
                 ><%= get_in(@edit_solution.metadata, ["description"]) || "" %></textarea>
               </div>
-
-              <!-- User Question -->
+              
+    <!-- User Question -->
               <div class="form-control mb-4">
                 <label class="label">
                   <span class="label-text font-semibold">Question</span>
@@ -709,8 +725,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   phx-blur="update_edit_user_query"
                 ><%= @edit_solution.user_query %></textarea>
               </div>
-
-              <!-- Answer Content -->
+              
+    <!-- Answer Content -->
               <div class="form-control mb-4">
                 <label class="label">
                   <span class="label-text font-semibold">Answer Content (Markdown)</span>
@@ -721,8 +737,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   phx-blur="update_edit_answer"
                 ><%= @edit_solution.answer_content %></textarea>
               </div>
-
-              <!-- Code Blocks -->
+              
+    <!-- Code Blocks -->
               <%= if length(@edit_solution.code_blocks) > 0 do %>
                 <div class="mb-4">
                   <label class="label">
@@ -778,8 +794,8 @@ defmodule ElixirBearWeb.SolutionsLive do
                   </div>
                 </div>
               <% end %>
-
-              <!-- Action Buttons -->
+              
+    <!-- Action Buttons -->
               <div class="flex gap-2 justify-end pt-4 border-t border-base-300">
                 <button class="btn btn-ghost" phx-click="close_edit_modal">
                   Cancel
@@ -792,8 +808,8 @@ defmodule ElixirBearWeb.SolutionsLive do
           </div>
         </div>
       <% end %>
-
-      <!-- Delete Confirmation Modal -->
+      
+    <!-- Delete Confirmation Modal -->
       <%= if @show_delete_modal && @delete_solution do %>
         <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div class="card bg-base-100 shadow-2xl max-w-md w-full">

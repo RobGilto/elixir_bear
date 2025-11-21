@@ -14,9 +14,14 @@ defmodule ElixirBearWeb.SettingsLive do
     ollama_url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
 
     # Solution extraction settings
-    solution_extraction_provider = Chat.get_setting_value("solution_extraction_provider") || "ollama"
-    solution_extraction_ollama_model = Chat.get_setting_value("solution_extraction_ollama_model") || "llama3.2"
-    solution_extraction_openai_model = Chat.get_setting_value("solution_extraction_openai_model") || "gpt-4o-mini"
+    solution_extraction_provider =
+      Chat.get_setting_value("solution_extraction_provider") || "ollama"
+
+    solution_extraction_ollama_model =
+      Chat.get_setting_value("solution_extraction_ollama_model") || "llama3.2"
+
+    solution_extraction_openai_model =
+      Chat.get_setting_value("solution_extraction_openai_model") || "gpt-4o-mini"
 
     # Solution router settings
     enable_solution_router = Chat.get_setting_value("enable_solution_router") || "true"
@@ -48,6 +53,7 @@ defmodule ElixirBearWeb.SettingsLive do
         case OpenAI.list_models(api_key) do
           {:ok, models} ->
             models
+
           {:error, _reason} ->
             OpenAI.default_models()
         end
@@ -81,6 +87,7 @@ defmodule ElixirBearWeb.SettingsLive do
       |> assign(:orchestrator_json_error, nil)
       |> assign(:background_images, background_images)
       |> assign(:selected_background, selected_background)
+      |> assign(:pending_previews, %{})
       |> allow_upload(:background_image,
         accept: ~w(.jpg .jpeg .png .gif .webp),
         max_entries: 1,
@@ -88,6 +95,17 @@ defmodule ElixirBearWeb.SettingsLive do
       )
 
     {:ok, socket}
+  end
+
+  @impl true
+  def handle_event(
+        "background_preview",
+        %{"client_name" => client_name, "preview_url" => preview_url},
+        socket
+      ) do
+    pending = Map.put(socket.assigns[:pending_previews] || %{}, client_name, preview_url)
+
+    {:noreply, assign(socket, :pending_previews, pending)}
   end
 
   @impl true
@@ -303,7 +321,10 @@ defmodule ElixirBearWeb.SettingsLive do
     socket =
       socket
       |> assign(:enable_solution_router, new_value)
-      |> put_flash(:info, "Solution router #{if new_value == "true", do: "enabled", else: "disabled"}")
+      |> put_flash(
+        :info,
+        "Solution router #{if new_value == "true", do: "enabled", else: "disabled"}"
+      )
 
     {:noreply, socket}
   end
@@ -339,7 +360,10 @@ defmodule ElixirBearWeb.SettingsLive do
     socket =
       socket
       |> assign(:enable_prompt_orchestrator, new_value)
-      |> put_flash(:info, "Prompt orchestrator #{if new_value == "true", do: "enabled", else: "disabled"}")
+      |> put_flash(
+        :info,
+        "Prompt orchestrator #{if new_value == "true", do: "enabled", else: "disabled"}"
+      )
 
     {:noreply, socket}
   end
@@ -367,7 +391,10 @@ defmodule ElixirBearWeb.SettingsLive do
           socket
           |> assign(:orchestrator_prompts_json, json_string)
           |> assign(:orchestrator_json_error, "Invalid JSON: #{Exception.message(error)}")
-          |> put_flash(:error, "Invalid JSON format. Tip: Use minified (single-line) JSON to avoid formatting issues.")
+          |> put_flash(
+            :error,
+            "Invalid JSON format. Tip: Use minified (single-line) JSON to avoid formatting issues."
+          )
 
         {:noreply, socket}
 
@@ -402,7 +429,10 @@ defmodule ElixirBearWeb.SettingsLive do
       {:error, %Jason.DecodeError{} = error} ->
         socket =
           socket
-          |> assign(:orchestrator_json_error, "Cannot beautify invalid JSON: #{Exception.message(error)}")
+          |> assign(
+            :orchestrator_json_error,
+            "Cannot beautify invalid JSON: #{Exception.message(error)}"
+          )
           |> put_flash(:error, "Invalid JSON - fix errors first")
 
         {:noreply, socket}
@@ -432,7 +462,10 @@ defmodule ElixirBearWeb.SettingsLive do
       {:error, %Jason.DecodeError{} = error} ->
         socket =
           socket
-          |> assign(:orchestrator_json_error, "Cannot minify invalid JSON: #{Exception.message(error)}")
+          |> assign(
+            :orchestrator_json_error,
+            "Cannot minify invalid JSON: #{Exception.message(error)}"
+          )
           |> put_flash(:error, "Invalid JSON - fix errors first")
 
         {:noreply, socket}
@@ -453,7 +486,10 @@ defmodule ElixirBearWeb.SettingsLive do
       consume_uploaded_entries(socket, :background_image, fn %{path: path}, entry ->
         # Generate unique filename
         ext = Path.extname(entry.client_name)
-        filename = "#{System.system_time(:second)}_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
+
+        filename =
+          "#{System.system_time(:second)}_#{:crypto.strong_rand_bytes(8) |> Base.encode16(case: :lower)}#{ext}"
+
         dest = Path.join(["priv", "static", "uploads", "backgrounds", filename])
 
         # Copy file to destination
@@ -464,21 +500,37 @@ defmodule ElixirBearWeb.SettingsLive do
         :ok = :file.sync(fd)
         :ok = :file.close(fd)
 
+        # Ensure file is readable by the web server
+        try do
+          File.chmod(dest, 0o644)
+        rescue
+          _ -> :ok
+        end
+
         # Create database entry
         file_path = "/uploads/backgrounds/#{filename}"
-        {:ok, background_image} = Chat.create_background_image(%{
-          filename: filename,
-          original_name: entry.client_name,
-          file_path: file_path
-        })
+
+        {:ok, background_image} =
+          Chat.create_background_image(%{
+            filename: filename,
+            original_name: entry.client_name,
+            file_path: file_path
+          })
 
         {:ok, background_image}
       end)
 
     socket =
       if length(uploaded_files) > 0 do
+        # Normalize uploaded entries (handle either {:ok, bg} or bg)
+        new_images =
+          Enum.map(uploaded_files, fn
+            {:ok, bg} -> bg
+            bg -> bg
+          end)
+
         socket
-        |> assign(:background_images, Chat.list_background_images())
+        |> assign(:background_images, new_images ++ socket.assigns.background_images)
         |> put_flash(:info, "Background image uploaded successfully")
       else
         socket
@@ -509,7 +561,9 @@ defmodule ElixirBearWeb.SettingsLive do
     background_image = Chat.get_background_image!(String.to_integer(id))
 
     # Delete file from filesystem
-    file_path = Path.join(["priv", "static"] ++ String.split(background_image.file_path, "/", trim: true))
+    file_path =
+      Path.join(["priv", "static"] ++ String.split(background_image.file_path, "/", trim: true))
+
     File.rm(file_path)
 
     # Delete from database
@@ -610,7 +664,13 @@ defmodule ElixirBearWeb.SettingsLive do
                   class="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    >
+                    </path>
                   </svg>
                   Refresh
                 </button>
@@ -622,7 +682,7 @@ defmodule ElixirBearWeb.SettingsLive do
                 class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 <%= for model <- @openai_models do %>
-                  <option value={model} selected={model == @openai_model}><%= model %></option>
+                  <option value={model} selected={model == @openai_model}>{model}</option>
                 <% end %>
               </select>
               <p class="mt-1 text-sm text-base-content/70">
@@ -649,11 +709,14 @@ defmodule ElixirBearWeb.SettingsLive do
                 placeholder="http://localhost:11434"
               />
               <p class="mt-1 text-sm text-base-content/70">
-                Status: <span class={[
+                Status:
+                <span class={[
                   "font-medium",
                   String.contains?(@ollama_status, "Connected") && "text-success",
                   !String.contains?(@ollama_status, "Connected") && "text-error"
-                ]}><%= @ollama_status %></span>
+                ]}>
+                  {@ollama_status}
+                </span>
               </p>
             </div>
 
@@ -668,7 +731,13 @@ defmodule ElixirBearWeb.SettingsLive do
                   class="text-xs text-primary hover:text-primary/80 flex items-center gap-1"
                 >
                   <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                    >
+                    </path>
                   </svg>
                   Refresh
                 </button>
@@ -681,7 +750,7 @@ defmodule ElixirBearWeb.SettingsLive do
                     class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                   >
                     <%= for model <- @ollama_models do %>
-                      <option value={model} selected={model == @ollama_model}><%= model %></option>
+                      <option value={model} selected={model == @ollama_model}>{model}</option>
                     <% end %>
                   </select>
                 </form>
@@ -701,7 +770,8 @@ defmodule ElixirBearWeb.SettingsLive do
                   />
                 </form>
                 <p class="mt-1 text-sm text-base-content/70">
-                  No models found. Run <code class="bg-base-300 px-1 rounded">ollama pull MODEL_NAME</code>
+                  No models found. Run
+                  <code class="bg-base-300 px-1 rounded">ollama pull MODEL_NAME</code>
                   to download models, then click Refresh.
                 </p>
               <% end %>
@@ -722,7 +792,9 @@ defmodule ElixirBearWeb.SettingsLive do
           ><%= @system_prompt %></textarea>
           <p class="mt-1 text-sm text-base-content/70">
             <%= if @enable_prompt_orchestrator == "true" do %>
-              <span class="font-medium text-info">⚡ Orchestrator Enabled:</span> This prompt is used as the <strong>default fallback</strong> when no specific category matches.
+              <span class="font-medium text-info">⚡ Orchestrator Enabled:</span>
+              This prompt is used as the <strong>default fallback</strong>
+              when no specific category matches.
             <% else %>
               Optional system prompt for all conversations (can be overridden per conversation)
             <% end %>
@@ -744,13 +816,18 @@ defmodule ElixirBearWeb.SettingsLive do
                 phx-click="toggle_orchestrator"
                 class="toggle toggle-primary"
               />
-              <span class="text-sm font-medium"><%= if @enable_prompt_orchestrator == "true", do: "Enabled", else: "Disabled" %></span>
+              <span class="text-sm font-medium">
+                {if @enable_prompt_orchestrator == "true", do: "Enabled", else: "Disabled"}
+              </span>
             </label>
           </div>
 
           <div class="space-y-4">
             <div>
-              <label for="orchestrator_prompts" class="block text-sm font-medium text-base-content mb-2">
+              <label
+                for="orchestrator_prompts"
+                class="block text-sm font-medium text-base-content mb-2"
+              >
                 System Prompts (JSON)
               </label>
               <textarea
@@ -758,10 +835,12 @@ defmodule ElixirBearWeb.SettingsLive do
                 rows="12"
                 phx-blur="update_orchestrator_prompts"
                 class={"w-full px-4 py-2 bg-base-200 text-base-content border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent font-mono text-sm #{if @orchestrator_json_error, do: "border-error", else: "border-base-300"}"}
-                placeholder={~s({\n  "python": "You are a Python expert...",\n  "python/django": "You are a Django framework expert...",\n  "elixir": "You are an Elixir expert...",\n  "elixir/phoenix": "You are a Phoenix framework expert..."\n})}
+                placeholder={
+                  ~s({\n  "python": "You are a Python expert...",\n  "python/django": "You are a Django framework expert...",\n  "elixir": "You are an Elixir expert...",\n  "elixir/phoenix": "You are a Phoenix framework expert..."\n})
+                }
               ><%= @orchestrator_prompts_json %></textarea>
-
-              <!-- Format Buttons -->
+              
+    <!-- Format Buttons -->
               <div class="flex gap-2 mt-2">
                 <button
                   type="button"
@@ -770,7 +849,13 @@ defmodule ElixirBearWeb.SettingsLive do
                   title="Format JSON with indentation for readability"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                    >
+                    </path>
                   </svg>
                   Beautify JSON
                 </button>
@@ -781,7 +866,13 @@ defmodule ElixirBearWeb.SettingsLive do
                   title="Compress JSON to single line (recommended to avoid formatting errors)"
                 >
                   <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+                    <path
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                      stroke-width="2"
+                      d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    >
+                    </path>
                   </svg>
                   Minify JSON
                 </button>
@@ -793,13 +884,16 @@ defmodule ElixirBearWeb.SettingsLive do
 
               <%= if @orchestrator_json_error do %>
                 <p class="mt-1 text-sm text-error">
-                  <%= @orchestrator_json_error %>
+                  {@orchestrator_json_error}
                 </p>
               <% else %>
                 <p class="mt-1 text-sm text-base-content/70">
-                  Define categorized prompts using JSON. Use format: <code class="bg-base-300 px-1 rounded">"category": "prompt text"</code> or <code class="bg-base-300 px-1 rounded">"language/framework": "prompt text"</code>
-                  <br/>
-                  <span class="text-info font-medium">Note:</span> The "System Prompt" field above serves as the default fallback.
+                  Define categorized prompts using JSON. Use format:
+                  <code class="bg-base-300 px-1 rounded">"category": "prompt text"</code>
+                  or <code class="bg-base-300 px-1 rounded">"language/framework": "prompt text"</code>
+                  <br />
+                  <span class="text-info font-medium">Note:</span>
+                  The "System Prompt" field above serves as the default fallback.
                 </p>
               <% end %>
             </div>
@@ -812,34 +906,54 @@ defmodule ElixirBearWeb.SettingsLive do
                   <span class="badge badge-sm badge-outline">default (System Prompt)</span>
                   <%= if length(categories) > 0 do %>
                     <%= for category <- categories do %>
-                      <span class="badge badge-sm badge-primary"><%= category %></span>
+                      <span class="badge badge-sm badge-primary">{category}</span>
                     <% end %>
                   <% end %>
                 </div>
               <% else %>
-                <p class="text-sm text-base-content/70 italic">Enable orchestrator to see categories</p>
+                <p class="text-sm text-base-content/70 italic">
+                  Enable orchestrator to see categories
+                </p>
               <% end %>
             </div>
 
             <div class="bg-info/10 border border-info/20 rounded-lg p-3">
               <div class="flex items-start gap-2">
-                <svg class="w-4 h-4 text-info mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                <svg
+                  class="w-4 h-4 text-info mt-0.5 flex-shrink-0"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                    stroke-width="2"
+                    d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                  >
+                  </path>
                 </svg>
                 <div class="text-sm text-info">
-                  <strong>How it works:</strong> The orchestrator analyzes each user message and selects the most appropriate system prompt.
-                  Supports hierarchical categories (e.g., <code class="bg-base-300 px-1 rounded">python/django</code> → <code class="bg-base-300 px-1 rounded">python</code> → <code class="bg-base-300 px-1 rounded">default</code>).
-                  The <strong>System Prompt field above</strong> is used as the default when no category matches.
+                  <strong>How it works:</strong>
+                  The orchestrator analyzes each user message and selects the most appropriate system prompt.
+                  Supports hierarchical categories (e.g.,
+                  <code class="bg-base-300 px-1 rounded">python/django</code>
+                  → <code class="bg-base-300 px-1 rounded">python</code>
+                  → <code class="bg-base-300 px-1 rounded">default</code>).
+                  The <strong>System Prompt field above</strong>
+                  is used as the default when no category matches.
                   Uses the same LLM provider as Solution Extraction.
                 </div>
               </div>
             </div>
           </div>
         </div>
-
-        <!-- Vision Model Settings -->
+        
+    <!-- Vision Model Settings -->
         <div class="border border-base-300 rounded-lg p-4 bg-base-100">
-          <h3 class="text-lg font-medium text-base-content mb-4">Vision Model (Image Understanding)</h3>
+          <h3 class="text-lg font-medium text-base-content mb-4">
+            Vision Model (Image Understanding)
+          </h3>
           <p class="text-sm text-base-content/70 mb-4">
             Separate model for analyzing images. Always uses OpenAI API with the API key configured above.
           </p>
@@ -854,25 +968,35 @@ defmodule ElixirBearWeb.SettingsLive do
               phx-change="update_vision_model"
               class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
             >
-              <option value="gpt-4o" selected={"gpt-4o" == @vision_model}>gpt-4o (Recommended)</option>
-              <option value="gpt-4o-mini" selected={"gpt-4o-mini" == @vision_model}>gpt-4o-mini (Faster, cheaper)</option>
-              <option value="gpt-4-turbo" selected={"gpt-4-turbo" == @vision_model}>gpt-4-turbo</option>
-              <option value="gpt-4-vision-preview" selected={"gpt-4-vision-preview" == @vision_model}>gpt-4-vision-preview</option>
+              <option value="gpt-4o" selected={"gpt-4o" == @vision_model}>
+                gpt-4o (Recommended)
+              </option>
+              <option value="gpt-4o-mini" selected={"gpt-4o-mini" == @vision_model}>
+                gpt-4o-mini (Faster, cheaper)
+              </option>
+              <option value="gpt-4-turbo" selected={"gpt-4-turbo" == @vision_model}>
+                gpt-4-turbo
+              </option>
+              <option value="gpt-4-vision-preview" selected={"gpt-4-vision-preview" == @vision_model}>
+                gpt-4-vision-preview
+              </option>
             </select>
             <p class="mt-1 text-sm text-base-content/70">
               Model used for analyzing images you attach to messages
             </p>
           </div>
         </div>
-
-        <!-- Solution Extraction Settings -->
+        
+    <!-- Solution Extraction Settings -->
         <div class="border border-base-300 rounded-lg p-4 bg-base-100">
-          <h3 class="text-lg font-medium text-base-content mb-2">Solution Extraction (Treasure Trove)</h3>
+          <h3 class="text-lg font-medium text-base-content mb-2">
+            Solution Extraction (Treasure Trove)
+          </h3>
           <p class="text-sm text-base-content/70 mb-4">
             Configure the LLM used to extract metadata from code solutions. This extracts topics, difficulty, and descriptions from conversations.
           </p>
-
-          <!-- Provider Selection -->
+          
+    <!-- Provider Selection -->
           <div class="mb-4">
             <label class="block text-sm font-medium text-base-content mb-3">
               Extraction LLM Provider
@@ -904,11 +1028,14 @@ defmodule ElixirBearWeb.SettingsLive do
               </label>
             </div>
           </div>
-
-          <!-- Model Selection based on Provider -->
+          
+    <!-- Model Selection based on Provider -->
           <%= if @solution_extraction_provider == "ollama" do %>
             <div>
-              <label for="solution_extraction_ollama_model" class="block text-sm font-medium text-base-content mb-2">
+              <label
+                for="solution_extraction_ollama_model"
+                class="block text-sm font-medium text-base-content mb-2"
+              >
                 Ollama Model
               </label>
               <%= if length(@ollama_models) > 0 do %>
@@ -919,7 +1046,9 @@ defmodule ElixirBearWeb.SettingsLive do
                   class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
                 >
                   <%= for model <- @ollama_models do %>
-                    <option value={model} selected={model == @solution_extraction_ollama_model}><%= model %></option>
+                    <option value={model} selected={model == @solution_extraction_ollama_model}>
+                      {model}
+                    </option>
                   <% end %>
                 </select>
                 <p class="mt-1 text-sm text-base-content/70">
@@ -941,7 +1070,10 @@ defmodule ElixirBearWeb.SettingsLive do
             </div>
           <% else %>
             <div>
-              <label for="solution_extraction_openai_model" class="block text-sm font-medium text-base-content mb-2">
+              <label
+                for="solution_extraction_openai_model"
+                class="block text-sm font-medium text-base-content mb-2"
+              >
                 OpenAI Model
               </label>
               <select
@@ -951,7 +1083,9 @@ defmodule ElixirBearWeb.SettingsLive do
                 class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
               >
                 <%= for model <- @openai_models do %>
-                  <option value={model} selected={model == @solution_extraction_openai_model}><%= model %></option>
+                  <option value={model} selected={model == @solution_extraction_openai_model}>
+                    {model}
+                  </option>
                 <% end %>
               </select>
               <p class="mt-1 text-sm text-base-content/70">
@@ -959,18 +1093,18 @@ defmodule ElixirBearWeb.SettingsLive do
               </p>
             </div>
           <% end %>
-
-          <!-- Divider -->
+          
+    <!-- Divider -->
           <div class="divider"></div>
-
-          <!-- Solution Router Settings -->
+          
+    <!-- Solution Router Settings -->
           <div class="mt-6">
             <h4 class="text-md font-medium text-base-content mb-2">Solution Router</h4>
             <p class="text-sm text-base-content/70 mb-4">
               Automatically check Treasure Trove for similar solutions before calling the main LLM. Save time and API costs by reusing existing solutions.
             </p>
-
-            <!-- Enable/Disable Toggle -->
+            
+    <!-- Enable/Disable Toggle -->
             <div class="mb-4">
               <label class="flex items-center gap-3 cursor-pointer">
                 <input
@@ -980,19 +1114,25 @@ defmodule ElixirBearWeb.SettingsLive do
                   class="toggle toggle-primary"
                 />
                 <span class="text-base-content">
-                  Enable Solution Router <%= if @enable_solution_router == "true", do: "✓", else: "" %>
+                  Enable Solution Router {if @enable_solution_router == "true", do: "✓", else: ""}
                 </span>
               </label>
               <p class="mt-1 text-sm text-base-content/70 ml-12">
                 When enabled, checks Treasure Trove for similar solutions before asking the LLM.
               </p>
             </div>
-
-            <!-- Similarity Threshold -->
+            
+    <!-- Similarity Threshold -->
             <%= if @enable_solution_router == "true" do %>
               <div>
-                <label for="solution_router_threshold" class="block text-sm font-medium text-base-content mb-2">
-                  Similarity Threshold: <span id="threshold-display"><%= Float.parse(@solution_router_threshold) |> elem(0) |> Float.round(2) %></span>
+                <label
+                  for="solution_router_threshold"
+                  class="block text-sm font-medium text-base-content mb-2"
+                >
+                  Similarity Threshold:
+                  <span id="threshold-display">
+                    {Float.parse(@solution_router_threshold) |> elem(0) |> Float.round(2)}
+                  </span>
                 </label>
                 <input
                   type="range"
@@ -1017,12 +1157,12 @@ defmodule ElixirBearWeb.SettingsLive do
             <% end %>
           </div>
         </div>
-
-        <!-- Background Image Gallery -->
+        
+    <!-- Background Image Gallery -->
         <div class="border border-base-300 rounded-lg p-4 bg-base-100">
           <h3 class="text-lg font-medium text-base-content mb-4">Background Images</h3>
-
-          <!-- Upload Section -->
+          
+    <!-- Upload Section -->
           <div class="mb-6">
             <form phx-submit="upload_background" phx-change="validate_background">
               <div class="flex gap-4 items-end">
@@ -1030,7 +1170,22 @@ defmodule ElixirBearWeb.SettingsLive do
                   <label class="block text-sm font-medium text-base-content mb-2">
                     Upload New Background
                   </label>
-                  <.live_file_input upload={@uploads.background_image} class="file-input file-input-bordered w-full" />
+                  <.live_file_input
+                    upload={@uploads.background_image}
+                    class="file-input file-input-bordered w-full"
+                  />
+                  <%= for entry <- @uploads.background_image.entries do %>
+                    <div class="mt-3 flex items-center gap-3">
+                      <.live_img_preview
+                        entry={entry}
+                        class="w-32 h-20 object-cover rounded-md border border-base-300"
+                      />
+                      <div class="text-sm text-base-content/70">
+                        <div class="font-medium">{entry.client_name}</div>
+                        <div class="text-xs">Uploading…</div>
+                      </div>
+                    </div>
+                  <% end %>
                   <p class="mt-1 text-sm text-base-content/70">
                     Supported formats: JPG, PNG, GIF, WebP (Max 5MB)
                   </p>
@@ -1060,8 +1215,8 @@ defmodule ElixirBearWeb.SettingsLive do
               </div>
             </form>
           </div>
-
-          <!-- Gallery Section -->
+          
+    <!-- Gallery Section -->
           <div>
             <h4 class="text-md font-medium text-base-content mb-3">Your Backgrounds</h4>
             <%= if length(@background_images) == 0 do %>
@@ -1087,13 +1242,22 @@ defmodule ElixirBearWeb.SettingsLive do
               <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                 <%= for bg_image <- @background_images do %>
                   <div class={"relative group rounded-lg overflow-hidden border-2 bg-base-200 #{if @selected_background && @selected_background.id == bg_image.id, do: "border-primary shadow-lg", else: "border-base-300"}"}>
-                    <img
-                      src={"#{bg_image.file_path}?v=#{bg_image.id}"}
-                      alt={bg_image.original_name}
-                      class="w-full h-32 object-cover"
-                      onerror="this.style.display='none'"
-                    />
-                    <div class="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-50 transition-all flex items-center justify-center gap-2">
+                    <div class="relative bg-card">
+                      <div class="absolute inset-0 skeleton bg-base-200 animate-pulse hidden"></div>
+                      <picture>
+                        <% preview_src =
+                          @pending_previews[bg_image.original_name] ||
+                            "#{bg_image.file_path}?v=#{bg_image.id}" %>
+                        <img
+                          src={preview_src}
+                          alt={bg_image.original_name}
+                          class="w-full h-32 object-cover opacity-0 transition-opacity duration-200"
+                          onload="this.classList.remove('opacity-0'); this.classList.add('opacity-100'); var s=this.closest('.bg-card') && this.closest('.bg-card').querySelector('.skeleton'); if(s) s.classList.add('hidden');"
+                          onerror="this.src='/images/logo.svg'"
+                        />
+                      </picture>
+                    </div>
+                    <div class="absolute inset-0 bg-black/0 group-hover:bg-black/50 transition-all flex items-center justify-center gap-2">
                       <button
                         phx-click="select_background"
                         phx-value-id={bg_image.id}

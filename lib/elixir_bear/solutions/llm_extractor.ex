@@ -62,15 +62,14 @@ defmodule ElixirBear.Solutions.LLMExtractor do
     if !api_key do
       {:error, :missing_api_key}
     else
+      prompt = build_extraction_prompt(package)
 
-    prompt = build_extraction_prompt(package)
+      messages = [
+        %{role: "system", content: system_prompt()},
+        %{role: "user", content: prompt}
+      ]
 
-    messages = [
-      %{role: "system", content: system_prompt()},
-      %{role: "user", content: prompt}
-    ]
-
-    Logger.info("Extracting metadata with OpenAI model: #{model}")
+      Logger.info("Extracting metadata with OpenAI model: #{model}")
 
       case OpenAI.chat_completion(api_key, messages, model: model, temperature: 0.3) do
         {:ok, response} ->
