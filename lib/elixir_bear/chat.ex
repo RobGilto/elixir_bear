@@ -243,11 +243,25 @@ defmodule ElixirBear.Chat do
 
   @doc """
   Gets the currently selected background image.
+  Returns default image if none is selected.
   """
   def get_selected_background_image do
-    BackgroundImage
-    |> where([b], b.is_selected == true)
-    |> Repo.one()
+    case BackgroundImage
+         |> where([b], b.is_selected == true)
+         |> Repo.one() do
+      nil ->
+        # Return a virtual struct with the default image
+        %BackgroundImage{
+          id: nil,
+          filename: "elixir_bear.png",
+          original_name: "Default Elixir Bear",
+          file_path: "/images/elixir_bear.png",
+          is_selected: false
+        }
+
+      background_image ->
+        background_image
+    end
   end
 
   @doc """

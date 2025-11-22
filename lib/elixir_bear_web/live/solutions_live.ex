@@ -350,7 +350,7 @@ defmodule ElixirBearWeb.SolutionsLive do
       class="min-h-screen bg-cover bg-center bg-no-repeat"
       style={
         if @selected_bg,
-          do: "background-image: url('/uploads/backgrounds/#{@selected_bg.filename}')",
+          do: "background-image: url('#{@selected_bg.file_path}')",
           else: ""
       }
     >
