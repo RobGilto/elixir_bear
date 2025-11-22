@@ -24,6 +24,8 @@ Transform your AI conversations into a powerful development tool:
 - **⚡ Real-Time Streaming**: Experience instant, token-by-token response streaming powered by Phoenix LiveView
 - **📁 Smart Conversation Management**: Organize multiple conversation threads with easy navigation and search
 - **🎨 Customizable Interface**: Personalize your workspace with custom background images and themes
+- **🎓 Learning Mode**: Built-in copy blocker that prevents copying conversation text to encourage active learning
+- **🧠 Prompt Orchestrator**: Automatically selects specialized system prompts based on conversation context
 
 ![Multi-modal Chat](/docs/images/multimodal-example.png)
 
@@ -38,6 +40,33 @@ The standout feature that sets ElixirBear apart:
 - **🔄 Reusability at Scale**: Build your personal library of battle-tested solutions
 
 ![Solutions Library](/docs/images/solutions-library.png)
+
+### 🎓 Enhanced Learning Features
+Powerful tools designed to improve your learning experience:
+
+- **📝 Copy Blocker (Learning Mode)**: Force active learning by preventing text copying
+  - Hides all copy buttons from code blocks
+  - Blocks text selection across conversation messages
+  - Encourages manual typing for better retention
+  - Toggleable on/off in Settings (enabled by default)
+
+- **🎯 Prompt Orchestrator**: Context-aware system prompt selection
+  - Automatically analyzes your questions to detect programming languages and frameworks
+  - Selects specialized system prompts based on detected context
+  - Supports hierarchical categories (e.g., `python/django` → `python` → `default`)
+  - Define custom prompts using simple JSON configuration
+  - Uses local or cloud LLM for intelligent routing
+
+  Example orchestrator configuration:
+  ```json
+  {
+    "python": "You are a Python expert...",
+    "python/django": "You are a Django framework specialist...",
+    "elixir": "You are an Elixir expert...",
+    "elixir/phoenix": "You are a Phoenix framework expert...",
+    "default": "You are a helpful programming assistant..."
+  }
+  ```
 
 ### 📎 Comprehensive File Support
 Work with virtually any file type in your conversations:
@@ -131,11 +160,16 @@ Visit [`localhost:4000`](http://localhost:4000) in your browser.
    - Add your OpenAI API key for GPT models, or
    - Configure Ollama endpoint for local models (e.g., `http://localhost:11434`)
 
-2. **Enable Smart Features** (Optional):
+2. **Configure Learning Features** (Optional):
+   - **Copy Blocker**: Enabled by default. Toggle off if you prefer to copy code freely
+   - **Prompt Orchestrator**: Define specialized system prompts for different programming contexts
+
+3. **Enable Smart Features** (Optional):
    - Enable automatic solution extraction
    - Configure the solution router for AI-powered suggestions
+   - Set solution router threshold for match confidence
 
-3. **Start Chatting** - Create a new conversation and start building your knowledge base!
+4. **Start Chatting** - Create a new conversation and start building your knowledge base!
 
 
 ## 🎬 Demo
@@ -250,17 +284,21 @@ Key configuration files:
 **For Developers**
 - Build a personal library of coding solutions and patterns
 - Quickly reference solutions from past AI conversations
+- Get context-aware responses with the Prompt Orchestrator
 - Learn by reviewing and organizing code snippets
 
 **For Teams**
 - Share and reuse common solutions across projects
 - Document tribal knowledge in an accessible format
 - Onboard new team members with curated solutions
+- Configure team-wide system prompts for consistent AI responses
 
 **For Learners**
 - Study AI-generated solutions with syntax highlighting
+- Use Learning Mode (copy blocker) to reinforce learning through manual typing
 - Organize learning materials by topic using tags
 - Track your coding journey through conversation history
+- Benefit from specialized AI tutoring via the Prompt Orchestrator
 
 ## 🤝 Contributing
 
