@@ -318,3 +318,26 @@
 [data-theme="light"] .highlight .s { color: oklch(40% 0.12 120); }
 [data-theme="light"] .highlight .nb { color: oklch(40% 0.2 277); }
 [data-theme="light"] .highlight .nf { color: oklch(40% 0.2 200); }
+
+/* Copy blocker (learning mode) - prevent text selection */
+.message-content.copy-blocked {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+.message-content.copy-blocked * {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}
+
+/* Override the revealed code text selection when copy is blocked */
+.message-content.copy-blocked pre code.revealed {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+}

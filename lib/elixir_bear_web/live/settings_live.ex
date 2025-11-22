@@ -31,6 +31,9 @@ defmodule ElixirBearWeb.SettingsLive do
     enable_prompt_orchestrator = Chat.get_setting_value("enable_prompt_orchestrator") || "false"
     orchestrator_prompts_json = Chat.get_setting_value("orchestrator_prompts") || ~s({})
 
+    # Copy blocker settings (for learning mode)
+    enable_copy_blocker = Chat.get_setting_value("enable_copy_blocker") || "true"
+
     # Check Ollama connection status and fetch models
     {ollama_status, ollama_models} =
       case Ollama.check_connection(url: ollama_url) do
@@ -85,6 +88,7 @@ defmodule ElixirBearWeb.SettingsLive do
       |> assign(:enable_prompt_orchestrator, enable_prompt_orchestrator)
       |> assign(:orchestrator_prompts_json, orchestrator_prompts_json)
       |> assign(:orchestrator_json_error, nil)
+      |> assign(:enable_copy_blocker, enable_copy_blocker)
       |> assign(:background_images, background_images)
       |> assign(:selected_background, selected_background)
       |> assign(:pending_previews, %{})
@@ -363,6 +367,24 @@ defmodule ElixirBearWeb.SettingsLive do
       |> put_flash(
         :info,
         "Prompt orchestrator #{if new_value == "true", do: "enabled", else: "disabled"}"
+      )
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_event("toggle_copy_blocker", _params, socket) do
+    current_value = socket.assigns.enable_copy_blocker
+    new_value = if current_value == "true", do: "false", else: "true"
+
+    Chat.update_setting("enable_copy_blocker", new_value)
+
+    socket =
+      socket
+      |> assign(:enable_copy_blocker, new_value)
+      |> put_flash(
+        :info,
+        "Copy blocker #{if new_value == "true", do: "enabled", else: "disabled"}"
       )
 
     {:noreply, socket}
@@ -778,28 +800,24 @@ defmodule ElixirBearWeb.SettingsLive do
             </div>
           </div>
         <% end %>
-        <!-- System Prompt -->
-        <div>
-          <label for="system_prompt" class="block text-sm font-medium text-base-content mb-2">
-            System Prompt
-          </label>
-          <textarea
-            id="system_prompt"
-            rows="6"
-            phx-blur="update_system_prompt"
-            class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-            placeholder="You are a helpful assistant..."
-          ><%= @system_prompt %></textarea>
-          <p class="mt-1 text-sm text-base-content/70">
-            <%= if @enable_prompt_orchestrator == "true" do %>
-              <span class="font-medium text-info">⚡ Orchestrator Enabled:</span>
-              This prompt is used as the <strong>default fallback</strong>
-              when no specific category matches.
-            <% else %>
+        <!-- System Prompt (hidden when orchestrator is enabled) -->
+        <%= if @enable_prompt_orchestrator != "true" do %>
+          <div>
+            <label for="system_prompt" class="block text-sm font-medium text-base-content mb-2">
+              System Prompt
+            </label>
+            <textarea
+              id="system_prompt"
+              rows="6"
+              phx-blur="update_system_prompt"
+              class="w-full px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+              placeholder="You are a helpful assistant..."
+            ><%= @system_prompt %></textarea>
+            <p class="mt-1 text-sm text-base-content/70">
               Optional system prompt for all conversations (can be overridden per conversation)
-            <% end %>
-          </p>
-        </div>
+            </p>
+          </div>
+        <% end %>
         <!-- Prompt Orchestrator -->
         <div class="border border-base-300 rounded-lg p-4 bg-base-100">
           <div class="flex items-start justify-between mb-4">
@@ -893,7 +911,8 @@ defmodule ElixirBearWeb.SettingsLive do
                   or <code class="bg-base-300 px-1 rounded">"language/framework": "prompt text"</code>
                   <br />
                   <span class="text-info font-medium">Note:</span>
-                  The "System Prompt" field above serves as the default fallback.
+                  Add a <code class="bg-base-300 px-1 rounded">"default"</code>
+                  category to define the fallback prompt when no specific category matches.
                 </p>
               <% end %>
             </div>
@@ -903,11 +922,12 @@ defmodule ElixirBearWeb.SettingsLive do
               <%= if @enable_prompt_orchestrator == "true" do %>
                 <% categories = ElixirBear.Chat.list_orchestrator_categories() %>
                 <div class="flex flex-wrap gap-2">
-                  <span class="badge badge-sm badge-outline">default (System Prompt)</span>
                   <%= if length(categories) > 0 do %>
                     <%= for category <- categories do %>
                       <span class="badge badge-sm badge-primary">{category}</span>
                     <% end %>
+                  <% else %>
+                    <span class="badge badge-sm badge-outline">No categories defined yet</span>
                   <% end %>
                 </div>
               <% else %>
@@ -940,15 +960,61 @@ defmodule ElixirBearWeb.SettingsLive do
                   <code class="bg-base-300 px-1 rounded">python/django</code>
                   → <code class="bg-base-300 px-1 rounded">python</code>
                   → <code class="bg-base-300 px-1 rounded">default</code>).
-                  The <strong>System Prompt field above</strong>
-                  is used as the default when no category matches.
+                  Include a <code class="bg-base-300 px-1 rounded">"default"</code>
+                  category in your JSON to define the fallback prompt when no category matches.
                   Uses the same LLM provider as Solution Extraction.
                 </div>
               </div>
             </div>
           </div>
         </div>
-        
+
+    <!-- Copy Blocker (Learning Mode) -->
+        <div class="border border-base-300 rounded-lg p-4 bg-base-100">
+          <div class="flex items-start justify-between mb-2">
+            <div>
+              <h3 class="text-lg font-medium text-base-content">Copy Blocker (Learning Mode)</h3>
+              <p class="text-sm text-base-content/70 mt-1">
+                Force active learning by preventing copying of conversation text and code solutions
+              </p>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={@enable_copy_blocker == "true"}
+                phx-click="toggle_copy_blocker"
+                class="toggle toggle-primary"
+              />
+              <span class="text-sm font-medium">
+                {if @enable_copy_blocker == "true", do: "Enabled", else: "Disabled"}
+              </span>
+            </label>
+          </div>
+
+          <div class="bg-warning/10 border border-warning/20 rounded-lg p-3 mt-4">
+            <div class="flex items-start gap-2">
+              <svg
+                class="w-4 h-4 text-warning mt-0.5 flex-shrink-0"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                  stroke-width="2"
+                  d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+                >
+                </path>
+              </svg>
+              <div class="text-sm text-warning-content">
+                <strong>When enabled:</strong>
+                Copy buttons will be hidden and text selection will be blocked on all conversation messages. This encourages typing out solutions manually for better learning retention.
+              </div>
+            </div>
+          </div>
+        </div>
+
     <!-- Vision Model Settings -->
         <div class="border border-base-300 rounded-lg p-4 bg-base-100">
           <h3 class="text-lg font-medium text-base-content mb-4">

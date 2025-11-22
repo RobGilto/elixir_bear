@@ -8,6 +8,7 @@ defmodule ElixirBearWeb.ChatLive do
   def mount(_params, _session, socket) do
     conversations = Chat.list_conversations()
     selected_background = Chat.get_selected_background_image()
+    enable_copy_blocker = Chat.get_setting_value("enable_copy_blocker") || "true"
 
     socket =
       socket
@@ -18,6 +19,7 @@ defmodule ElixirBearWeb.ChatLive do
       |> assign(:loading, false)
       |> assign(:error, nil)
       |> assign(:selected_background, selected_background)
+      |> assign(:enable_copy_blocker, enable_copy_blocker)
       |> assign(:processing_conversations, MapSet.new())
       |> assign(:solution_extraction_task, nil)
       |> assign(:extracting_solution, false)
@@ -1171,8 +1173,14 @@ defmodule ElixirBearWeb.ChatLive do
                     </div>
                   <% end %>
 
-                  <div class="prose prose-sm max-w-none message-content">
-                    {Markdown.to_html(message.content, message_id: Map.get(message, :id))}
+                  <div class={[
+                    "prose prose-sm max-w-none message-content",
+                    @enable_copy_blocker == "true" && "copy-blocked"
+                  ]}>
+                    {Markdown.to_html(message.content,
+                      message_id: Map.get(message, :id),
+                      block_copy: @enable_copy_blocker == "true"
+                    )}
                   </div>
                   
     <!-- System Prompt Badge (shown at bottom if orchestrator is enabled) -->

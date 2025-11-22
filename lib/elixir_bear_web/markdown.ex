@@ -9,22 +9,24 @@ defmodule ElixirBearWeb.Markdown do
 
   Options:
   - `:message_id` - The ID of the message containing this markdown (for edit persistence)
+  - `:block_copy` - When true, hides copy button and blocks text selection (for learning mode)
   """
   def to_html(markdown, opts \\ [])
 
   def to_html(markdown, opts) when is_binary(markdown) do
     message_id = Keyword.get(opts, :message_id)
+    block_copy = Keyword.get(opts, :block_copy, false)
 
     markdown
     |> Earmark.as_html!()
-    |> process_html_code_blocks(message_id)
+    |> process_html_code_blocks(message_id, block_copy)
     |> Phoenix.HTML.raw()
   end
 
   def to_html(nil, _opts), do: Phoenix.HTML.raw("")
 
   # Process HTML code blocks to add syntax highlighting and copy button
-  defp process_html_code_blocks(html, message_id) do
+  defp process_html_code_blocks(html, message_id, block_copy) do
     # Match code blocks with optional language class
     # Use [\s\S] to match any character including newlines
     regex = ~r/<pre><code(?:\s+class="([^"]+)")?>([\s\S]*?)<\/code><\/pre>/
@@ -51,6 +53,14 @@ defmodule ElixirBearWeb.Markdown do
 
       message_data = if message_id, do: ~s( data-message-id="#{message_id}"), else: ""
 
+      # Conditionally render copy button based on block_copy setting
+      copy_button =
+        if block_copy do
+          ""
+        else
+          ~s(<button class="code-button copy-button" data-clipboard-text="#{escaped_for_attr}">Copy</button>)
+        end
+
       """
       <pre#{message_data}>
         <code class="highlight language-#{lang}">#{highlighted}</code>
@@ -58,7 +68,7 @@ defmodule ElixirBearWeb.Markdown do
         <div class="code-controls">
           <button class="code-button reveal-button">Reveal</button>
           <button class="code-button edit-button">Edit</button>
-          <button class="code-button copy-button" data-clipboard-text="#{escaped_for_attr}">Copy</button>
+          #{copy_button}
         </div>
       </pre>
       """
