@@ -5,66 +5,33 @@ defmodule ElixirBearWeb.SettingsLive do
 
   @impl true
   def mount(_params, _session, socket) do
-    api_key = Chat.get_setting_value("openai_api_key") || ""
-    system_prompt = Chat.get_setting_value("system_prompt") || ""
-    llm_provider = Chat.get_setting_value("llm_provider") || "openai"
-    openai_model = Chat.get_setting_value("openai_model") || "gpt-3.5-turbo"
-    vision_model = Chat.get_setting_value("vision_model") || "gpt-4o"
-    ollama_model = Chat.get_setting_value("ollama_model") || "codellama:latest"
-    ollama_url = Chat.get_setting_value("ollama_url") || "http://localhost:11434"
+    settings = ElixirBear.SettingsCache.get_all_settings()
 
-    # Solution extraction settings
-    solution_extraction_provider =
-      Chat.get_setting_value("solution_extraction_provider") || "ollama"
+    api_key = settings.api_key
+    system_prompt = settings.system_prompt
+    llm_provider = settings.llm_provider
+    openai_model = settings.openai_model
+    vision_model = settings.vision_model
+    ollama_model = settings.ollama_model
+    ollama_url = settings.ollama_url
 
-    solution_extraction_ollama_model =
-      Chat.get_setting_value("solution_extraction_ollama_model") || "llama3.2"
+    solution_extraction_provider = settings.solution_extraction_provider
+    solution_extraction_ollama_model = settings.solution_extraction_ollama_model
+    solution_extraction_openai_model = settings.solution_extraction_openai_model
 
-    solution_extraction_openai_model =
-      Chat.get_setting_value("solution_extraction_openai_model") || "gpt-4o-mini"
+    enable_solution_router = settings.enable_solution_router
+    solution_router_threshold = settings.solution_router_threshold
 
-    # Solution router settings
-    enable_solution_router = Chat.get_setting_value("enable_solution_router") || "true"
-    solution_router_threshold = Chat.get_setting_value("solution_router_threshold") || "0.75"
+    enable_prompt_orchestrator = settings.enable_prompt_orchestrator
+    orchestrator_prompts_json = settings.orchestrator_prompts_json
 
-    # Orchestrator settings
-    enable_prompt_orchestrator = Chat.get_setting_value("enable_prompt_orchestrator") || "false"
-    orchestrator_prompts_json = Chat.get_setting_value("orchestrator_prompts") || ~s({})
+    enable_copy_blocker = settings.enable_copy_blocker
 
-    # Copy blocker settings (for learning mode)
-    enable_copy_blocker = Chat.get_setting_value("enable_copy_blocker") || "true"
+    {:ok, {ollama_status, ollama_models}} =
+      ElixirBear.SettingsCache.get_ollama_models(ollama_url)
 
-    # Check Ollama connection status and fetch models
-    {ollama_status, ollama_models} =
-      case Ollama.check_connection(url: ollama_url) do
-        {:ok, version} ->
-          models =
-            case Ollama.list_models(url: ollama_url) do
-              {:ok, models} -> models
-              {:error, _} -> []
-            end
+    openai_models = ElixirBear.SettingsCache.get_openai_models(api_key)
 
-          {"Connected (version: #{version})", models}
-
-        {:error, _} ->
-          {"Not connected", []}
-      end
-
-    # Fetch OpenAI models if API key is present
-    openai_models =
-      if api_key != "" do
-        case OpenAI.list_models(api_key) do
-          {:ok, models} ->
-            models
-
-          {:error, _reason} ->
-            OpenAI.default_models()
-        end
-      else
-        OpenAI.default_models()
-      end
-
-    # Load background images
     background_images = Chat.list_background_images()
     selected_background = Chat.get_selected_background_image()
 
@@ -115,6 +82,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_api_key", %{"value" => api_key}, socket) do
     Chat.update_setting("openai_api_key", api_key)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -127,6 +95,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_system_prompt", %{"value" => system_prompt}, socket) do
     Chat.update_setting("system_prompt", system_prompt)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -139,6 +108,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_openai_model", %{"value" => openai_model}, socket) do
     Chat.update_setting("openai_model", openai_model)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -151,6 +121,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_vision_model", %{"value" => vision_model}, socket) do
     Chat.update_setting("vision_model", vision_model)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -168,6 +139,8 @@ defmodule ElixirBearWeb.SettingsLive do
 
     case Chat.update_setting("ollama_model", ollama_model) do
       {:ok, _setting} ->
+        ElixirBear.SettingsCache.invalidate()
+
         socket =
           socket
           |> assign(:ollama_model, ollama_model)
@@ -187,22 +160,10 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_ollama_url", %{"value" => ollama_url}, socket) do
     Chat.update_setting("ollama_url", ollama_url)
+    ElixirBear.SettingsCache.invalidate()
 
-    # Check Ollama connection status and fetch models
-    {ollama_status, ollama_models} =
-      case Ollama.check_connection(url: ollama_url) do
-        {:ok, version} ->
-          models =
-            case Ollama.list_models(url: ollama_url) do
-              {:ok, models} -> models
-              {:error, _} -> []
-            end
-
-          {"Connected (version: #{version})", models}
-
-        {:error, _} ->
-          {"Not connected", []}
-      end
+    {:ok, {ollama_status, ollama_models}} =
+      ElixirBear.SettingsCache.get_ollama_models(ollama_url)
 
     socket =
       socket
@@ -217,6 +178,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("change_provider", %{"llm_provider" => provider}, socket) do
     Chat.update_setting("llm_provider", provider)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -229,26 +191,15 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("refresh_models", _params, socket) do
     llm_provider = socket.assigns.llm_provider
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       case llm_provider do
         "ollama" ->
           ollama_url = socket.assigns.ollama_url
 
-          {ollama_status, ollama_models} =
-            case Ollama.check_connection(url: ollama_url) do
-              {:ok, version} ->
-                models =
-                  case Ollama.list_models(url: ollama_url) do
-                    {:ok, models} -> models
-                    {:error, _} -> []
-                  end
-
-                {"Connected (version: #{version})", models}
-
-              {:error, _} ->
-                {"Not connected", []}
-            end
+          {:ok, {ollama_status, ollama_models}} =
+            ElixirBear.SettingsCache.get_ollama_models(ollama_url)
 
           socket
           |> assign(:ollama_status, ollama_status)
@@ -258,15 +209,7 @@ defmodule ElixirBearWeb.SettingsLive do
         "openai" ->
           api_key = socket.assigns.api_key
 
-          openai_models =
-            if api_key != "" do
-              case OpenAI.list_models(api_key) do
-                {:ok, models} -> models
-                {:error, _} -> OpenAI.default_models()
-              end
-            else
-              OpenAI.default_models()
-            end
+          openai_models = ElixirBear.SettingsCache.get_openai_models(api_key)
 
           socket
           |> assign(:openai_models, openai_models)
@@ -282,6 +225,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("change_solution_extraction_provider", %{"provider" => provider}, socket) do
     Chat.update_setting("solution_extraction_provider", provider)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -294,6 +238,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_solution_extraction_ollama_model", %{"value" => model}, socket) do
     Chat.update_setting("solution_extraction_ollama_model", model)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -306,6 +251,7 @@ defmodule ElixirBearWeb.SettingsLive do
   @impl true
   def handle_event("update_solution_extraction_openai_model", %{"value" => model}, socket) do
     Chat.update_setting("solution_extraction_openai_model", model)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -321,6 +267,7 @@ defmodule ElixirBearWeb.SettingsLive do
     new_value = if current_value == "true", do: "false", else: "true"
 
     Chat.update_setting("enable_solution_router", new_value)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -335,7 +282,6 @@ defmodule ElixirBearWeb.SettingsLive do
 
   @impl true
   def handle_event("update_solution_router_threshold", %{"value" => threshold}, socket) do
-    # Validate threshold is between 0.0 and 1.0
     threshold_float = String.to_float(threshold)
 
     threshold_clamped =
@@ -345,6 +291,7 @@ defmodule ElixirBearWeb.SettingsLive do
       |> Float.to_string()
 
     Chat.update_setting("solution_router_threshold", threshold_clamped)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -360,6 +307,7 @@ defmodule ElixirBearWeb.SettingsLive do
     new_value = if current_value == "true", do: "false", else: "true"
 
     Chat.update_setting("enable_prompt_orchestrator", new_value)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -378,6 +326,7 @@ defmodule ElixirBearWeb.SettingsLive do
     new_value = if current_value == "true", do: "false", else: "true"
 
     Chat.update_setting("enable_copy_blocker", new_value)
+    ElixirBear.SettingsCache.invalidate()
 
     socket =
       socket
@@ -392,12 +341,11 @@ defmodule ElixirBearWeb.SettingsLive do
 
   @impl true
   def handle_event("update_orchestrator_prompts", %{"value" => json_string}, socket) do
-    # Validate JSON before saving
     case Jason.decode(json_string) do
       {:ok, prompts} when is_map(prompts) ->
         Chat.update_setting("orchestrator_prompts", json_string)
+        ElixirBear.SettingsCache.invalidate()
 
-        # Parse the categories for display
         categories = Chat.list_orchestrator_categories()
 
         socket =

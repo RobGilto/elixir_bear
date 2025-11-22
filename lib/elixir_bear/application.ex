@@ -12,11 +12,9 @@ defmodule ElixirBear.Application do
       ElixirBear.Repo,
       {DNSCluster, query: Application.get_env(:elixir_bear, :dns_cluster_query) || :ignore},
       {Phoenix.PubSub, name: ElixirBear.PubSub},
-      # Registry for conversation workers
+      ElixirBear.SettingsCache,
       {Registry, keys: :unique, name: ElixirBear.ConversationWorkerRegistry},
-      # Dynamic supervisor for conversation workers
       {DynamicSupervisor, strategy: :one_for_one, name: ElixirBear.ConversationWorkerSupervisor},
-      # Start to serve requests, typically the last entry
       ElixirBearWeb.Endpoint
     ]
 
