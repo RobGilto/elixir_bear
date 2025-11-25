@@ -1331,15 +1331,17 @@ defmodule ElixirBearWeb.ChatLive do
                 </svg>
               </label>
 
-              <input
-                type="text"
+              <textarea
+                id="message-input"
                 name="message"
-                value={@input}
                 phx-change="update_input"
+                phx-hook="InvertedResize"
                 disabled={@loading}
                 placeholder="Type your message..."
-                class="flex-1 px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50"
-              />
+                rows="3"
+                class="flex-1 px-4 py-2 bg-base-200 text-base-content border border-base-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 resize-none min-h-[80px]"
+                style="height: 80px;"
+              >{@input}</textarea>
               <button
                 type="submit"
                 disabled={@loading || (@input == "" && length(@uploads.message_files.entries) == 0)}

@@ -341,3 +341,46 @@
   -moz-user-select: none;
   -ms-user-select: none;
 }
+
+/* Inverted resize handle */
+.inverted-resize-handle {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 2rem;
+  height: 2rem;
+  background-color: oklch(45% 0.15 277);
+  border-radius: 0.375rem;
+  cursor: ns-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: oklch(98% 0.01 256);
+  transition: all 0.2s ease;
+  z-index: 10;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.inverted-resize-handle:hover {
+  background-color: oklch(55% 0.2 277);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+.inverted-resize-handle.active {
+  background-color: oklch(60% 0.25 277);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+[data-theme="light"] .inverted-resize-handle {
+  background-color: oklch(70% 0.213 47.604);
+  color: oklch(98% 0.016 73.684);
+}
+
+[data-theme="light"] .inverted-resize-handle:hover {
+  background-color: oklch(75% 0.213 47.604);
+}
+
+[data-theme="light"] .inverted-resize-handle.active {
+  background-color: oklch(65% 0.213 47.604);
+}

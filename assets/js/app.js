@@ -352,7 +352,6 @@ const Hooks = {
       const displayId = slider.getAttribute('data-display-id')
       const display = displayId ? document.getElementById(displayId) : null
 
-      // Update display value as slider moves (immediate feedback)
       slider.addEventListener('input', (e) => {
         const value = parseFloat(e.target.value).toFixed(2)
         if (display) {
@@ -360,11 +359,84 @@ const Hooks = {
         }
       })
 
-      // Send to server when user releases slider or stops dragging
       slider.addEventListener('change', (e) => {
         const value = e.target.value
         this.pushEventTo(slider, 'update_solution_router_threshold', { value: value })
       })
+    }
+  },
+  InvertedResize: {
+    mounted() {
+      this.textarea = this.el
+      this.handle = null
+      this.isDragging = false
+      this.startY = 0
+      this.startHeight = 0
+      
+      this.createResizeHandle()
+      this.setupEventListeners()
+    },
+    createResizeHandle() {
+      const wrapper = document.createElement('div')
+      wrapper.style.position = 'relative'
+      wrapper.style.flex = '1'
+      wrapper.style.display = 'flex'
+      wrapper.style.flexDirection = 'column'
+      wrapper.style.minHeight = '0'
+      
+      this.textarea.parentNode.insertBefore(wrapper, this.textarea)
+      wrapper.appendChild(this.textarea)
+      
+      this.textarea.style.width = '100%'
+      this.textarea.style.flex = '0 0 auto'
+      
+      this.handle = document.createElement('div')
+      this.handle.className = 'inverted-resize-handle'
+      this.handle.innerHTML = `
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+        </svg>
+      `
+      wrapper.appendChild(this.handle)
+      
+      this.wrapper = wrapper
+    },
+    setupEventListeners() {
+      this.handle.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        this.isDragging = true
+        this.startY = e.clientY
+        this.startHeight = this.textarea.offsetHeight
+        this.handle.classList.add('active')
+        document.body.style.userSelect = 'none'
+      })
+      
+      document.addEventListener('mousemove', (e) => {
+        if (!this.isDragging) return
+        
+        const deltaY = e.clientY - this.startY
+        const newHeight = this.startHeight - deltaY
+        
+        const minHeight = 80
+        const maxHeight = 400
+        const clampedHeight = Math.max(minHeight, Math.min(maxHeight, newHeight))
+        
+        this.textarea.style.height = `${clampedHeight}px`
+      })
+      
+      document.addEventListener('mouseup', () => {
+        if (this.isDragging) {
+          this.isDragging = false
+          this.handle.classList.remove('active')
+          document.body.style.userSelect = ''
+        }
+      })
+    },
+    destroyed() {
+      if (this.wrapper && this.wrapper.parentNode) {
+        this.wrapper.parentNode.insertBefore(this.textarea, this.wrapper)
+        this.wrapper.remove()
+      }
     }
   }
 }
